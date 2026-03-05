@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<strings>
+    <string id="AppName">BatteryBudget</string>
+
+    <!-- Settings (not needed at runtime) -->
+    <string id="SettingsTitle" scope="settings">Settings</string>
+
+    <string id="SettingsForecastGroupTitle" scope="settings">Forecast</string>
+    <string id="SettingsForecastGroupDescription" scope="settings">Adjust end-of-day and risk behavior</string>
+
+    <string id="SettingsLearningGroupTitle" scope="settings">Learning</string>
+    <string id="SettingsLearningGroupDescription" scope="settings">Control logging and reset learned data</string>
+
+    <string id="SettingNumberError" scope="settings">Value out of range</string>
+
+    <string id="EndOfDayTimeLabel" scope="settings">End of Day Time</string>
+    <string id="EndOfDayTimePrompt" scope="settings">When does your day end? (HH:MM)</string>
+
+    <string id="RiskThresholdYellowLabel" scope="settings">Yellow Risk Threshold (%)</string>
+    <string id="RiskThresholdYellowPrompt" scope="settings">Battery % for medium risk warning</string>
+
+    <string id="RiskThresholdRedLabel" scope="settings">Red Risk Threshold (%)</string>
+    <string id="RiskThresholdRedPrompt" scope="settings">Battery % for high risk warning</string>
+
+    <string id="ConservativeFactorLabel" scope="settings">Conservative Factor</string>
+    <string id="ConservativeFactorPrompt" scope="settings">Drain multiplier (%) (100-200)</string>
+
+    <string id="OptimisticFactorLabel" scope="settings">Optimistic Factor</string>
+    <string id="OptimisticFactorPrompt" scope="settings">Drain multiplier (%) (50-100)</string>
+
+    <string id="SampleIntervalLabel" scope="settings">Sample Interval (min)</string>
+    <string id="SampleIntervalPrompt" scope="settings">How often to log battery (background)</string>
+
+    <string id="LearningWindowLabel" scope="settings">Learning Window (days)</string>
+    <string id="LearningWindowPrompt" scope="settings">Days of history to use for predictions</string>
+
+    <string id="ResetDataLabel" scope="settings">Reset learned data</string>
+    <string id="ResetDataPrompt" scope="settings">Turn on to clear all learned history on the watch</string>
+
+
+    <!-- Runtime UI strings (foreground widget) -->
+    <string id="Tonight">Tonight</string>
+    <string id="Now">Now</string>
+    <string id="Range">Range</string>
+    <string id="Risk">Risk</string>
+    <string id="Confidence">Confidence</string>
+    <string id="Learning">Learning...</string>
+    <string id="LearningTitle">LEARNING</string>
+    <string id="IdleOnlyEstimate">(idle-only estimate)</string>
+    <string id="NoData">No data yet</string>
+    <string id="DaysCollected">days collected</string>
+    <string id="None">None</string>
+    <string id="BasedOnPattern">Based on your weekly pattern</string>
+
+    <!-- Risk levels -->
+    <string id="RiskLow">LOW</string>
+    <string id="RiskMedium">MED</string>
+    <string id="RiskHigh">HIGH</string>
+
+    <!-- Rates page -->
+    <string id="LearnedRates">Learned Rates</string>
+    <string id="IdleRate">Idle</string>
+    <string id="ActivityRate">Activity</string>
+    <string id="PerHour">/h</string>
+    <string id="RunRate">Run</string>
+    <string id="BikeRate">Bike</string>
+    <string id="HikeRate">Hike</string>
+    <string id="RatesAutoLine1">Rates update automatically</string>
+    <string id="RatesAutoLine2">as you use your watch</string>
+
+    <!-- Activity page -->
+    <string id="NextActivity">Next Typical Activity</string>
+    <string id="NoActivityPredicted">No activity predicted</string>
+    <string id="MinTypical">min typical</string>
+</strings>

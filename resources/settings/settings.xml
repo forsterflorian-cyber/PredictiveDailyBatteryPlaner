@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<settings>
+    <group id="forecast" title="@Strings.SettingsForecastGroupTitle" description="@Strings.SettingsForecastGroupDescription">
+        <setting propertyKey="@Properties.endOfDayTime" title="@Strings.EndOfDayTimeLabel" prompt="@Strings.EndOfDayTimePrompt">
+            <settingConfig type="alphaNumeric" required="true" maxLength="5" />
+        </setting>
+
+        <setting propertyKey="@Properties.riskThresholdYellow" title="@Strings.RiskThresholdYellowLabel" prompt="@Strings.RiskThresholdYellowPrompt">
+            <settingConfig type="numeric" min="0" max="100" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.riskThresholdRed" title="@Strings.RiskThresholdRedLabel" prompt="@Strings.RiskThresholdRedPrompt">
+            <settingConfig type="numeric" min="0" max="100" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.conservativeFactor" title="@Strings.ConservativeFactorLabel" prompt="@Strings.ConservativeFactorPrompt">
+            <settingConfig type="numeric" min="100" max="200" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.optimisticFactor" title="@Strings.OptimisticFactorLabel" prompt="@Strings.OptimisticFactorPrompt">
+            <settingConfig type="numeric" min="50" max="100" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+    </group>
+
+    <group id="learning" title="@Strings.SettingsLearningGroupTitle" description="@Strings.SettingsLearningGroupDescription">
+        <setting propertyKey="@Properties.sampleIntervalMin" title="@Strings.SampleIntervalLabel" prompt="@Strings.SampleIntervalPrompt">
+            <settingConfig type="numeric" min="5" max="120" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.learningWindowDays" title="@Strings.LearningWindowLabel" prompt="@Strings.LearningWindowPrompt">
+            <settingConfig type="numeric" min="1" max="60" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.resetData" title="@Strings.ResetDataLabel" prompt="@Strings.ResetDataPrompt">
+            <settingConfig type="boolean" />
+        </setting>
+    </group>
+</settings>

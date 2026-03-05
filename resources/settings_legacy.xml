@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<settings>
+    <setting propertyKey="@Properties.endOfDayTime" title="@Strings.EndOfDayTimeLabel">
+        <settingConfig type="alphaNumeric" />
+    </setting>
+    
+    <setting propertyKey="@Properties.riskThresholdYellow" title="@Strings.RiskThresholdYellowLabel">
+        <settingConfig type="numeric" min="10" max="50" />
+    </setting>
+    
+    <setting propertyKey="@Properties.riskThresholdRed" title="@Strings.RiskThresholdRedLabel">
+        <settingConfig type="numeric" min="5" max="30" />
+    </setting>
+    
+    <setting propertyKey="@Properties.conservativeFactor" title="@Strings.ConservativeFactorLabel">
+        <settingConfig type="numeric" min="100" max="200" />
+    </setting>
+    
+    <setting propertyKey="@Properties.optimisticFactor" title="@Strings.OptimisticFactorLabel">
+        <settingConfig type="numeric" min="50" max="100" />
+    </setting>
+    
+    <setting propertyKey="@Properties.sampleIntervalMin" title="@Strings.SampleIntervalLabel">
+        <settingConfig type="numeric" min="5" max="60" />
+    </setting>
+    
+    <setting propertyKey="@Properties.learningWindowDays" title="@Strings.LearningWindowLabel">
+        <settingConfig type="numeric" min="7" max="28" />
+    </setting>
+</settings>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<properties>
+    <property id="endOfDayTime" type="string">22:00</property>
+    <property id="riskThresholdYellow" type="number">30</property>
+    <property id="riskThresholdRed" type="number">15</property>
+    <property id="conservativeFactor" type="number">120</property>
+    <property id="optimisticFactor" type="number">80</property>
+    <property id="sampleIntervalMin" type="number">15</property>
+    <property id="learningWindowDays" type="number">14</property>
+    <property id="resetData" type="boolean">false</property>
+</properties>

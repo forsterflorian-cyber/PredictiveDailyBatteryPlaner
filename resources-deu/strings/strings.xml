@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<strings>
+    <string id="AppName">BatteryBudget</string>
+
+    <!-- Settings (not needed at runtime) -->
+    <string id="SettingsTitle" scope="settings">Einstellungen</string>
+
+    <string id="SettingsForecastGroupTitle" scope="settings">Prognose</string>
+    <string id="SettingsForecastGroupDescription" scope="settings">Tagesende und Risiko anpassen</string>
+
+    <string id="SettingsLearningGroupTitle" scope="settings">Lernen</string>
+    <string id="SettingsLearningGroupDescription" scope="settings">Logging steuern und Daten zurücksetzen</string>
+
+    <string id="SettingNumberError" scope="settings">Wert außerhalb des Bereichs</string>
+
+    <string id="EndOfDayTimeLabel" scope="settings">Tagesende</string>
+    <string id="EndOfDayTimePrompt" scope="settings">Wann endet dein Tag? (HH:MM)</string>
+
+    <string id="RiskThresholdYellowLabel" scope="settings">Risiko-Gelb (%)</string>
+    <string id="RiskThresholdYellowPrompt" scope="settings">Akku-% für mittleres Risiko</string>
+
+    <string id="RiskThresholdRedLabel" scope="settings">Risiko-Rot (%)</string>
+    <string id="RiskThresholdRedPrompt" scope="settings">Akku-% für hohes Risiko</string>
+
+    <string id="ConservativeFactorLabel" scope="settings">Konservativ-Faktor</string>
+    <string id="ConservativeFactorPrompt" scope="settings">Verbrauch in % (100-200)</string>
+
+    <string id="OptimisticFactorLabel" scope="settings">Optimistisch-Faktor</string>
+    <string id="OptimisticFactorPrompt" scope="settings">Verbrauch in % (50-100)</string>
+
+    <string id="SampleIntervalLabel" scope="settings">Intervall (min)</string>
+    <string id="SampleIntervalPrompt" scope="settings">Wie oft Akku loggen (Hintergrund)</string>
+
+    <string id="LearningWindowLabel" scope="settings">Lernfenster (Tage)</string>
+    <string id="LearningWindowPrompt" scope="settings">Tage Historie für Prognosen</string>
+
+    <string id="ResetDataLabel" scope="settings">Gelernte Daten löschen</string>
+    <string id="ResetDataPrompt" scope="settings">Aktivieren, um alle Lern-Daten auf der Uhr zu löschen</string>
+
+
+    <!-- Runtime UI strings (foreground widget) -->
+    <string id="Tonight">Heute</string>
+    <string id="Now">Jetzt</string>
+    <string id="Range">Spanne</string>
+    <string id="Risk">Risiko</string>
+    <string id="Confidence">Sicherheit</string>
+    <string id="Learning">Lernt...</string>
+    <string id="LearningTitle">LERNT</string>
+    <string id="IdleOnlyEstimate">(nur Leerlauf)</string>
+    <string id="NoData">Noch keine Daten</string>
+    <string id="DaysCollected">Tage Daten</string>
+    <string id="None">Keine</string>
+    <string id="BasedOnPattern">Basierend auf deinem Muster</string>
+
+    <!-- Risk levels -->
+    <string id="RiskLow">NIED</string>
+    <string id="RiskMedium">MIT</string>
+    <string id="RiskHigh">HOCH</string>
+
+    <!-- Rates page -->
+    <string id="LearnedRates">Gelernte Raten</string>
+    <string id="IdleRate">Leerlauf</string>
+    <string id="ActivityRate">Aktivität</string>
+    <string id="PerHour">/h</string>
+    <string id="RunRate">Lauf</string>
+    <string id="BikeRate">Rad</string>
+    <string id="HikeRate">Wandern</string>
+    <string id="RatesAutoLine1">Raten aktualisieren sich</string>
+    <string id="RatesAutoLine2">automatisch mit der Zeit</string>
+
+    <!-- Activity page -->
+    <string id="NextActivity">Nächste Aktivität</string>
+    <string id="NoActivityPredicted">Keine Aktivität erwartet</string>
+    <string id="MinTypical">Min typisch</string>
+</strings>

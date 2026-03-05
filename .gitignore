@@ -1,0 +1,24 @@
+# Connect IQ build artifacts
+bin/
+dist/
+*.prg
+*.debug.xml
+*-settings.json
+*.iq
+*.bak
+
+# Keys
+developer_key.der
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Local tooling / debug artifacts
+.VSCodeCounter/
+docs/archive/
+*.tmp
+*.tmp_ignore
+*.clean
+*.debug_backup
+*.broken_test
