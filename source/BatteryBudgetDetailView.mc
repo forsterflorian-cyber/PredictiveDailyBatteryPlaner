@@ -11,14 +11,10 @@ class BatteryBudgetDetailView extends WatchUi.View {
     private var _currentPage as Number = 0;
     private const MAX_PAGES = 4;
     private const FORECAST_REFRESH_INTERVAL_SEC = 60;
-
-    private const PAGE_DOT_RADIUS = 4;
-    private const PAGE_DOT_SPACING = 14;
-    private const PAGE_DOT_Y_OFFSET = 15;
-    private const PAGE_DOT_SAFE_GAP = 6;
-    private const NEXT_ACTIVITY_TITLE_FALLBACK = "Next Activity";
-    private const NEXT_ACTIVITY_TITLE_MIN = "Next";
-    private const BASED_ON_PATTERN_FALLBACK = "Weekly pattern";
+    private const PAGE_DOT_RADIUS_FACTOR = 0.016f;
+    private const PAGE_DOT_SPACING_FACTOR = 0.058f;
+    private const PAGE_DOT_Y_OFFSET_FACTOR = 0.060f;
+    private const PAGE_DOT_SAFE_GAP_FACTOR = 0.022f;
     
     function initialize() {
         View.initialize();
@@ -36,10 +32,18 @@ class BatteryBudgetDetailView extends WatchUi.View {
     }
     
     function updateForecast() as Void {
-        if (_forecaster.hasMinimumConfidence()) {
-            _forecast = _forecaster.forecast();
-        } else {
-            _forecast = _forecaster.getSimpleForecast();
+        try {
+            if (_forecaster.hasMinimumConfidence()) {
+                _forecast = _forecaster.forecast();
+            } else {
+                _forecast = _forecaster.getSimpleForecast();
+            }
+        } catch (ex) {
+            try {
+                _forecast = _forecaster.getSimpleForecast();
+            } catch (ex2) {
+                _forecast = null;
+            }
         }
         _lastForecastUpdateSec = nowEpochSeconds();
         WatchUi.requestUpdate();
@@ -118,13 +122,15 @@ class BatteryBudgetDetailView extends WatchUi.View {
         dc.drawText(centerX, noteY, noteFont, solarStr, Graphics.TEXT_JUSTIFY_CENTER);
 
         // Graph area between title and solar note
-        var graphTop    = topPad + titleH + 6;
-        var graphBottom = noteY - 6;
-        var graphLeft   = 10;
-        var graphRight  = width - 10;
+        var graphGap = scaleByHeight(height, 0.018f, 3, 10);
+        var graphPadX = scaleByWidth(width, 0.04f, 6, 20);
+        var graphTop    = topPad + titleH + graphGap;
+        var graphBottom = noteY - graphGap;
+        var graphLeft   = graphPadX;
+        var graphRight  = width - graphPadX;
         var graphW      = graphRight - graphLeft;
         var graphH      = graphBottom - graphTop;
-        if (graphH < 20 || graphW < 20) { return; }
+        if (graphH < scaleByHeight(height, 0.10f, 20, 64) || graphW < scaleByWidth(width, 0.16f, 20, 90)) { return; }
 
         // Load history: flat array [tMin1, batt1, tMin2, batt2, ...]
         var history = BatteryBudget.StorageManager.getInstance().getBatteryHistory();
@@ -225,19 +231,21 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
         var titleH = dc.getFontHeight(titleFont);
         var nowH = dc.getFontHeight(nowFont);
+        var titleGap = scaleByHeight(height, 0.012f, 2, 6);
+        var nowGap = scaleByHeight(height, 0.025f, 4, 12);
 
         var y = topPad;
 
         // Title
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, y, titleFont, tr(Rez.Strings.AppName), Graphics.TEXT_JUSTIFY_CENTER);
-        y += titleH + 4;
+        y += titleH + titleGap;
 
         // Current battery
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, y, nowFont,
             Lang.format("$1$: $2$%", [tr(Rez.Strings.Now), nowBatt]), Graphics.TEXT_JUSTIFY_CENTER);
-        y += nowH + 8;
+        y += nowH + nowGap;
 
         var bodyTop = y;
         var bodyBottom = contentBottom;
@@ -245,7 +253,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
         if (_forecast == null) {
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(centerX, (bodyTop + bodyBottom) / 2, Graphics.FONT_SMALL,
-                tr(Rez.Strings.NoData), Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+                tr(Rez.Strings.Learning), Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             return;
         }
 
@@ -279,42 +287,76 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var hintH = dc.getFontHeight(hintFont);
         var infoH = dc.getFontHeight(infoFont);
 
-        var barHeight = 8;
+        var availableH = bottomY - topY;
+        if (availableH < 0) { availableH = 0; }
 
-        var gapLg = 6;
-        var gapMd = 4;
-        var gapSm = 2;
+        var barHeight = scaleByHeight(availableH, 0.040f, 5, 11);
+        var gapLg = scaleByHeight(availableH, 0.032f, 2, 8);
+        var gapMd = scaleByHeight(availableH, 0.022f, 1, 6);
+        var gapSm = scaleByHeight(availableH, 0.012f, 1, 4);
 
         var showHint = true;
         var showDays = true;
         var showBar = true;
 
-        var availableH = bottomY - topY;
-        if (availableH < 0) { availableH = 0; }
-
-        var totalH = getLearningLayoutHeight(titleH, estimateH, hintH, infoH, barHeight, gapLg, gapMd, gapSm, showHint, showDays, showBar);
+        var totalH = getLearningLayoutHeight(
+            titleH,
+            estimateH,
+            infoH,
+            getLearningOptionalBlocks(gapSm, hintH, gapLg, infoH, barHeight, showHint, showDays, showBar),
+            gapLg,
+            gapMd
+        );
         if (totalH > availableH) {
             showBar = false;
-            gapLg = 4;
-            gapMd = 3;
-            totalH = getLearningLayoutHeight(titleH, estimateH, hintH, infoH, barHeight, gapLg, gapMd, gapSm, showHint, showDays, showBar);
+            gapLg = scaleByHeight(availableH, 0.024f, 2, 6);
+            gapMd = scaleByHeight(availableH, 0.018f, 1, 4);
+            totalH = getLearningLayoutHeight(
+                titleH,
+                estimateH,
+                infoH,
+                getLearningOptionalBlocks(gapSm, hintH, gapLg, infoH, barHeight, showHint, showDays, showBar),
+                gapLg,
+                gapMd
+            );
         }
         if (totalH > availableH) {
             showHint = false;
-            gapLg = 3;
-            gapMd = 2;
-            totalH = getLearningLayoutHeight(titleH, estimateH, hintH, infoH, barHeight, gapLg, gapMd, gapSm, showHint, showDays, showBar);
+            gapLg = scaleByHeight(availableH, 0.018f, 1, 4);
+            gapMd = scaleByHeight(availableH, 0.012f, 1, 3);
+            totalH = getLearningLayoutHeight(
+                titleH,
+                estimateH,
+                infoH,
+                getLearningOptionalBlocks(gapSm, hintH, gapLg, infoH, barHeight, showHint, showDays, showBar),
+                gapLg,
+                gapMd
+            );
         }
         if (totalH > availableH) {
             showDays = false;
-            totalH = getLearningLayoutHeight(titleH, estimateH, hintH, infoH, barHeight, gapLg, gapMd, gapSm, showHint, showDays, showBar);
+            totalH = getLearningLayoutHeight(
+                titleH,
+                estimateH,
+                infoH,
+                getLearningOptionalBlocks(gapSm, hintH, gapLg, infoH, barHeight, showHint, showDays, showBar),
+                gapLg,
+                gapMd
+            );
         }
         if (totalH > availableH) {
             titleFont = Graphics.FONT_SMALL;
             estimateFont = Graphics.FONT_TINY;
             titleH = dc.getFontHeight(titleFont);
             estimateH = dc.getFontHeight(estimateFont);
-            totalH = getLearningLayoutHeight(titleH, estimateH, hintH, infoH, barHeight, gapLg, gapMd, gapSm, showHint, showDays, showBar);
+            totalH = getLearningLayoutHeight(
+                titleH,
+                estimateH,
+                infoH,
+                getLearningOptionalBlocks(gapSm, hintH, gapLg, infoH, barHeight, showHint, showDays, showBar),
+                gapLg,
+                gapMd
+            );
         }
 
         var y = topY + ((availableH - totalH) / 2).toNumber();
@@ -357,11 +399,9 @@ class BatteryBudgetDetailView extends WatchUi.View {
             y += gapSm;
 
             // Progress bar
-            var barWidth = (width * 0.6).toNumber();
-            if (barWidth > 180) { barWidth = 180; }
-            if (barWidth < 90) { barWidth = width - 40; }
-            if (barWidth < 60) { barWidth = width - 20; }
-            if (barWidth < 50) { barWidth = 50; }
+            var maxBarWidth = scaleByWidth(width, 0.78f, 60, width);
+            var minBarWidth = scaleByWidth(width, 0.36f, 42, maxBarWidth);
+            var barWidth = scaleByWidth(width, 0.60f, minBarWidth, maxBarWidth);
 
             var barX = centerX - barWidth / 2;
             var barY = y;
@@ -406,6 +446,8 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var riskH = dc.getFontHeight(riskFont);
         var budgetH = dc.getFontHeight(budgetFont);
         var confH = dc.getFontHeight(confFont);
+        var contentH = bottomY - topY;
+        if (contentH < 0) { contentH = 0; }
 
         // Confidence anchored just above the page dots
         var confPct = (confidence * 100).toNumber();
@@ -414,16 +456,32 @@ class BatteryBudgetDetailView extends WatchUi.View {
         if (confY < topY) { confY = topY; }
 
         var stackTop = topY;
-        var stackBottom = confY - 8;
+        var stackBottom = confY - scaleByHeight(contentH, 0.018f, 3, 10);
         if (stackBottom < stackTop) { stackBottom = stackTop; }
 
-        var gapSm = 2;
-        var gapMd = 6;
+        var gapSm = scaleByHeight(contentH, 0.012f, 1, 4);
+        var gapMd = scaleByHeight(contentH, 0.026f, 2, 10);
 
         // Include budget line when there is meaningful budget (>0 min)
         var showBudget = budgetMin > 0;
         var stackH = numH + gapSm + labelH + gapMd + rangeH + gapMd + riskH;
         if (showBudget) { stackH += gapMd + budgetH; }
+
+        var availableStackH = stackBottom - stackTop;
+        if (availableStackH < 0) { availableStackH = 0; }
+        if (showBudget && stackH > availableStackH) {
+            showBudget = false;
+            stackH = numH + gapSm + labelH + gapMd + rangeH + gapMd + riskH;
+        }
+        if (stackH > availableStackH) {
+            gapMd = scaleByHeight(contentH, 0.014f, 1, 4);
+            gapSm = scaleByHeight(contentH, 0.008f, 1, 3);
+            stackH = numH + gapSm + labelH + gapMd + rangeH + gapMd + riskH;
+            if (showBudget && stackH + gapMd + budgetH > availableStackH) {
+                showBudget = false;
+            }
+            if (showBudget) { stackH += gapMd + budgetH; }
+        }
 
         var y = stackTop + ((stackBottom - stackTop - stackH) / 2).toNumber();
         if (y < stackTop) { y = stackTop; }
@@ -437,8 +495,12 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var numW = dc.getTextWidthInPixels(numStr, numFont);
         var percentStr = "%";
         var percentW = dc.getTextWidthInPixels(percentStr, percentFont);
-        var percentX = centerX + (numW / 2) + 2;
-        if ((percentX + percentW) > width) { percentX = width - percentW - 2; }
+        var percentGap = scaleByWidth(width, 0.008f, 1, 4);
+        var rightPad = scaleByWidth(width, 0.012f, 1, 6);
+        var percentX = centerX + (numW / 2) + percentGap;
+        if ((percentX + percentW) > (width - rightPad)) {
+            percentX = width - percentW - rightPad;
+        }
         var percentY = y + ((numH - percentH) / 2).toNumber();
         dc.drawText(percentX, percentY, percentFont, percentStr, Graphics.TEXT_JUSTIFY_LEFT);
 
@@ -467,13 +529,16 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
         // Activity budget line: "Budget: Xh Ym" or "Budget: Ym"
         if (showBudget) {
+            var budgetLabel = tr(Rez.Strings.LabelBudget);
+            var unitHour = tr(Rez.Strings.UnitHourShort);
+            var unitMinute = tr(Rez.Strings.UnitMinuteShort);
             var budgetStr;
             if (budgetMin >= 60) {
                 var bh = budgetMin / 60;
                 var bm = budgetMin - bh * 60;
-                budgetStr = Lang.format("Budget: $1$h $2$m", [bh, bm]);
+                budgetStr = Lang.format("$1$: $2$$3$ $4$$5$", [budgetLabel, bh, unitHour, bm, unitMinute]);
             } else {
-                budgetStr = Lang.format("Budget: $1$m", [budgetMin]);
+                budgetStr = Lang.format("$1$: $2$$3$", [budgetLabel, budgetMin, unitMinute]);
             }
             dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(centerX, y, budgetFont, budgetStr, Graphics.TEXT_JUSTIFY_CENTER);
@@ -514,18 +579,20 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var noteH = dc.getFontHeight(noteFont);
 
         // Layout: center all lines between title and page dots
-        var contentTop = topPad + titleH + 10;
-        var gapAfterIdle = 6;
-        var gapBetweenProfile = 4;
-        var gapBeforeNote = 10;
-        var noteGap = 2;
+        var contentTop = topPad + titleH + scaleByHeight(height, 0.028f, 5, 14);
+        var gapAfterIdle = scaleByHeight(height, 0.018f, 3, 8);
+        var gapBetweenProfile = scaleByHeight(height, 0.014f, 2, 6);
+        var gapBeforeNote = scaleByHeight(height, 0.032f, 6, 16);
+        var noteGap = scaleByHeight(height, 0.008f, 1, 4);
 
         var profileCount = 0;
         if (run != null) { profileCount += 1; }
         if (bike != null) { profileCount += 1; }
         if (hike != null) { profileCount += 1; }
 
-        var gapAfterActivity = profileCount > 0 ? 10 : 6;
+        var gapAfterActivity = profileCount > 0
+            ? scaleByHeight(height, 0.032f, 6, 14)
+            : gapAfterIdle;
 
         var profilesH = 0;
         if (profileCount > 0) {
@@ -590,17 +657,19 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var contentBottom = getContentBottom(height);
 
         var titleFont = Graphics.FONT_TINY;
-        var titleY = topPad + 2;
+        var titleY = topPad + scaleByHeight(height, 0.010f, 1, 4);
         var titleCandidate = tr(Rez.Strings.NextActivity);
+        var titleFallback = tr(Rez.Strings.NextActivityShort);
+        var titleMin = tr(Rez.Strings.NextActivityMin);
         var titleMaxW = getSafeTextWidthAtY(width, height, titleY + (dc.getFontHeight(titleFont) / 2));
-        var titleText = fitTextOrFallback(dc, titleCandidate, titleFont, titleMaxW, NEXT_ACTIVITY_TITLE_FALLBACK);
+        var titleText = fitTextOrFallback(dc, titleCandidate, titleFont, titleMaxW, titleFallback);
         if (titleText == null) {
             titleFont = Graphics.FONT_XTINY;
             titleMaxW = getSafeTextWidthAtY(width, height, titleY + (dc.getFontHeight(titleFont) / 2));
-            titleText = fitTextOrFallback(dc, titleCandidate, titleFont, titleMaxW, NEXT_ACTIVITY_TITLE_FALLBACK);
+            titleText = fitTextOrFallback(dc, titleCandidate, titleFont, titleMaxW, titleFallback);
         }
-        if (titleText == null && dc.getTextWidthInPixels(NEXT_ACTIVITY_TITLE_MIN, titleFont) <= titleMaxW) {
-            titleText = NEXT_ACTIVITY_TITLE_MIN;
+        if (titleText == null && dc.getTextWidthInPixels(titleMin, titleFont) <= titleMaxW) {
+            titleText = titleMin;
         }
         var titleH = titleText != null ? dc.getFontHeight(titleFont) : 0;
 
@@ -614,22 +683,27 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var noteFont = Graphics.FONT_XTINY;
         var noteH = dc.getFontHeight(noteFont);
         var noteCandidate = tr(Rez.Strings.BasedOnPattern);
+        var noteFallback = tr(Rez.Strings.BasedOnPatternShort);
         var noteY = contentBottom - noteH;
         var noteMaxW = getSafeTextWidthAtY(width, height, noteY + (noteH / 2));
-        var noteText = fitTextOrFallback(dc, noteCandidate, noteFont, noteMaxW, BASED_ON_PATTERN_FALLBACK);
+        var noteText = fitTextOrFallback(dc, noteCandidate, noteFont, noteMaxW, noteFallback);
         if (noteText == null) {
             noteY = contentBottom;
         }
 
         // Content area between title and footer
-        var contentTop = titleY + titleH + (titleText != null ? 10 : 4);
-        var contentBottomInner = noteY - (noteText != null ? 10 : 0);
+        var topGap = titleText != null
+            ? scaleByHeight(height, 0.034f, 4, 12)
+            : scaleByHeight(height, 0.016f, 2, 6);
+        var bottomGap = noteText != null ? scaleByHeight(height, 0.028f, 4, 12) : 0;
+        var contentTop = titleY + titleH + topGap;
+        var contentBottomInner = noteY - bottomGap;
         if (contentBottomInner < contentTop) { contentBottomInner = contentTop; }
 
         if (_forecast == null) {
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(centerX, (contentTop + contentBottomInner) / 2, Graphics.FONT_SMALL,
-                tr(Rez.Strings.NoData), Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+                tr(Rez.Strings.Learning), Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
             if (noteText != null) {
                 dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
@@ -649,8 +723,9 @@ class BatteryBudgetDetailView extends WatchUi.View {
             var msgFont = Graphics.FONT_SMALL;
             var noneH = dc.getFontHeight(noneFont);
             var msgH = dc.getFontHeight(msgFont);
+            var noneGap = scaleByHeight(height, 0.020f, 2, 8);
 
-            var blockH = noneH + 6 + msgH;
+            var blockH = noneH + noneGap + msgH;
             var y = contentTop + ((contentBottomInner - contentTop - blockH) / 2).toNumber();
             if (y < contentTop) { y = contentTop; }
 
@@ -658,7 +733,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
             dc.drawText(centerX, y, noneFont, tr(Rez.Strings.None), Graphics.TEXT_JUSTIFY_CENTER);
 
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(centerX, y + noneH + 6, msgFont,
+            dc.drawText(centerX, y + noneH + noneGap, msgFont,
                 tr(Rez.Strings.NoActivityPredicted), Graphics.TEXT_JUSTIFY_CENTER);
         } else {
             // Show next activity window
@@ -675,16 +750,18 @@ class BatteryBudgetDetailView extends WatchUi.View {
             var timeH = dc.getFontHeight(timeFont);
             var durH = dc.getFontHeight(durFont);
             var drainH = dc.getFontHeight(drainFont);
+            var gapAfterTime = scaleByHeight(height, 0.026f, 3, 10);
+            var gapBeforeDrain = scaleByHeight(height, 0.028f, 4, 12);
 
-            var blockH = timeH + 8 + durH;
-            if (drain > 0) { blockH += 10 + drainH; }
+            var blockH = timeH + gapAfterTime + durH;
+            if (drain > 0) { blockH += gapBeforeDrain + drainH; }
 
             var y = contentTop + ((contentBottomInner - contentTop - blockH) / 2).toNumber();
             if (y < contentTop) { y = contentTop; }
 
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(centerX, y, timeFont, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
-            y += timeH + 8;
+            y += timeH + gapAfterTime;
 
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
             dc.drawText(centerX, y, durFont,
@@ -693,7 +770,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
             // Expected drain
             if (drain > 0) {
-                y += 10;
+                y += gapBeforeDrain;
                 dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
                 dc.drawText(centerX, y, drainFont,
                     "-> -" + drain + "%", Graphics.TEXT_JUSTIFY_CENTER);
@@ -707,15 +784,51 @@ class BatteryBudgetDetailView extends WatchUi.View {
         }
     }
 
-    private function getLearningLayoutHeight(titleH as Number, estimateH as Number, hintH as Number, infoH as Number,
-                                             barHeight as Number, gapLg as Number, gapMd as Number, gapSm as Number,
-                                             showHint as Boolean, showDays as Boolean, showBar as Boolean) as Number {
-        var totalH = titleH + gapLg + estimateH;
-        if (showHint) { totalH += gapSm + hintH; }
-        if (showDays) { totalH += gapLg + infoH; }
-        totalH += gapMd + infoH; // confidence line
-        if (showBar) { totalH += gapSm + barHeight; }
-        return totalH;
+    private function getLearningLayoutHeight(titleH as Number, estimateH as Number, infoH as Number,
+                                             optionalBlocks as Array<Number>, gapLg as Number, gapMd as Number) as Number {
+        return titleH + gapLg + estimateH + optionalBlocks[0] + optionalBlocks[1] + gapMd + infoH + optionalBlocks[2];
+    }
+
+    private function getLearningOptionalBlocks(gapSm as Number, hintH as Number, gapLg as Number, infoH as Number,
+                                               barHeight as Number, showHint as Boolean, showDays as Boolean,
+                                               showBar as Boolean) as Array<Number> {
+        return [
+            showHint ? (gapSm + hintH) : 0,
+            showDays ? (gapLg + infoH) : 0,
+            showBar ? (gapSm + barHeight) : 0
+        ];
+    }
+
+    private function clampNumber(value as Number, minVal as Number, maxVal as Number) as Number {
+        if (value < minVal) { return minVal; }
+        if (value > maxVal) { return maxVal; }
+        return value;
+    }
+
+    private function scaleByHeight(height as Number, factor as Float, minVal as Number, maxVal as Number) as Number {
+        var scaled = (height.toFloat() * factor + 0.5f).toNumber();
+        return clampNumber(scaled, minVal, maxVal);
+    }
+
+    private function scaleByWidth(width as Number, factor as Float, minVal as Number, maxVal as Number) as Number {
+        var scaled = (width.toFloat() * factor + 0.5f).toNumber();
+        return clampNumber(scaled, minVal, maxVal);
+    }
+
+    private function getPageDotRadius(height as Number) as Number {
+        return scaleByHeight(height, PAGE_DOT_RADIUS_FACTOR, 2, 6);
+    }
+
+    private function getPageDotSpacing(width as Number, height as Number, radius as Number) as Number {
+        var baseSpacing = scaleByWidth(width, PAGE_DOT_SPACING_FACTOR, radius * 3, radius * 5);
+        var minSpacing = radius * 3;
+        if (baseSpacing < minSpacing) { return minSpacing; }
+        return baseSpacing;
+    }
+
+    private function getPageIndicatorY(height as Number) as Number {
+        var offset = scaleByHeight(height, PAGE_DOT_Y_OFFSET_FACTOR, 10, 28);
+        return height - offset;
     }
 
     private function fitTextOrFallback(dc as Dc, text as String, font, maxWidth as Number, fallback as String) as String? {
@@ -737,8 +850,8 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
     private function getRoundInsetAtY(width as Number, height as Number, y as Number) as Number {
         // Conservative inset curve for round screens; safe on square screens too.
-        if (width != height) { return 10; }
-        var edgeBand = (height * 0.2f).toNumber();
+        if (width != height) { return scaleByWidth(width, 0.035f, 6, 14); }
+        var edgeBand = scaleByHeight(height, 0.20f, 14, 96);
         if (y <= edgeBand || y >= (height - edgeBand)) {
             return (width * 0.22f).toNumber();
         }
@@ -746,14 +859,13 @@ class BatteryBudgetDetailView extends WatchUi.View {
     }
 
     private function getTopPadding(height as Number) as Number {
-        var pad = (height * 0.08).toNumber();
-        if (pad < 8) { pad = 8; }
-        if (pad > 24) { pad = 24; }
-        return pad;
+        return scaleByHeight(height, 0.08f, 8, 24);
     }
 
     private function getContentBottom(height as Number) as Number {
-        return height - (PAGE_DOT_Y_OFFSET + PAGE_DOT_RADIUS + PAGE_DOT_SAFE_GAP);
+        var radius = getPageDotRadius(height);
+        var safeGap = scaleByHeight(height, PAGE_DOT_SAFE_GAP_FACTOR, 3, 10);
+        return getPageIndicatorY(height) - radius - safeGap;
     }
 
     // Format rate with one decimal (proper rounding)
@@ -766,18 +878,22 @@ class BatteryBudgetDetailView extends WatchUi.View {
     
     // Draw page indicator dots
     private function drawPageIndicator(dc as Dc, width as Number, height as Number) as Void {
-        var totalWidth = (MAX_PAGES - 1) * PAGE_DOT_SPACING;
+        var radius = getPageDotRadius(height);
+        var spacing = getPageDotSpacing(width, height, radius);
+        var totalWidth = (MAX_PAGES - 1) * spacing;
         var startX = (width - totalWidth) / 2;
-        var y = height - PAGE_DOT_Y_OFFSET;
+        var y = getPageIndicatorY(height);
         
         for (var i = 0; i < MAX_PAGES; i++) {
-            var x = startX + i * PAGE_DOT_SPACING;
+            var x = startX + i * spacing;
             if (i == _currentPage) {
                 dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.fillCircle(x, y, PAGE_DOT_RADIUS);
+                dc.fillCircle(x, y, radius);
             } else {
                 dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-                dc.fillCircle(x, y, PAGE_DOT_RADIUS - 1);
+                var inactiveRadius = radius - 1;
+                if (inactiveRadius < 1) { inactiveRadius = 1; }
+                dc.fillCircle(x, y, inactiveRadius);
             }
         }
     }

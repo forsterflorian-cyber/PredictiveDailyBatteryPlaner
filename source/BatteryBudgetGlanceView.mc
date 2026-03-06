@@ -18,18 +18,16 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
     private const DEFAULT_ACTIVITY_RATE = 8.0f; // %/h
 
     private const DEFAULT_CONSERVATIVE_FACTOR = 1.2f;
-    private const DEFAULT_OPTIMISTIC_FACTOR = 0.8f;
 
     private const DEFAULT_RISK_YELLOW = 30;
     private const DEFAULT_RISK_RED = 15;
-    private const RISK_LABEL_LOW = "LOW";
-    private const RISK_LABEL_MEDIUM = "MED";
-    private const RISK_LABEL_HIGH = "HIGH";
+    private const ALERT_COLOR_HIGH_DRAIN = 0xFF6600;
+    private const ALERT_COLOR_LOW_BUDGET = 0xFFB000;
+    private const BUDGET_COLOR_OK = 0x3399FF;
 
     private var _nowBatt as Number = 50;
     private var _typicalBatt as Number? = null;
     private var _consBatt as Number? = null;
-    private var _optBatt as Number? = null;
 
     private var _riskLabel as String? = null;
     private var _riskColor as Number = Graphics.COLOR_WHITE;
@@ -54,24 +52,34 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         var width = dc.getWidth();
         var height = dc.getHeight();
         var x = getContentX(width);
+        var rightPad = scaleByWidth(width, 0.03f, 2, 14);
+        var maxLineW = width - x - rightPad;
+        if (maxLineW < scaleByWidth(width, 0.26f, 42, width)) {
+            x = scaleByWidth(width, 0.04f, 2, 12);
+            maxLineW = width - x - rightPad;
+        }
 
         var fontMain = Graphics.FONT_GLANCE;
         var fontSub = Graphics.FONT_XTINY;
+        var gap = scaleByHeight(height, 0.016f, 1, 5);
+        var outerPad = scaleByHeight(height, 0.018f, 1, 6);
 
-        var line1 = "Now: " + _nowBatt.toString() + "%";
+        var nowLabel = tr(Rez.Strings.NowShort);
+        var line1 = Lang.format("$1$: $2$%", [nowLabel, _nowBatt]);
 
         var line2;
         if (_typicalBatt != null) {
-            line2 = "EOD " + _endOfDayLabel + ": ~" + (_typicalBatt as Number).toString() + "%";
+            line2 = Lang.format("$1$ $2$: ~$3$%", [tr(Rez.Strings.EodShort), _endOfDayLabel, (_typicalBatt as Number)]);
         } else {
-            line2 = "EOD " + _endOfDayLabel + ": learning";
+            line2 = Lang.format("$1$ $2$: $3$", [tr(Rez.Strings.EodShort), _endOfDayLabel, tr(Rez.Strings.Learning)]);
         }
 
         var line3;
+        var daySuffix = tr(Rez.Strings.DaysShort);
         if (_typicalBatt != null && _riskLabel != null) {
-            line3 = "Risk " + (_riskLabel as String) + " | " + _daysCollected.toString() + "d";
+            line3 = Lang.format("$1$ $2$ | $3$$4$", [tr(Rez.Strings.Risk), (_riskLabel as String), _daysCollected, daySuffix]);
         } else {
-            line3 = "Learning | " + _daysCollected.toString() + "d";
+            line3 = Lang.format("$1$ | $2$$3$", [tr(Rez.Strings.MsgWaitForData), _daysCollected, daySuffix]);
         }
         var line3Color = Graphics.COLOR_WHITE;
         if (_riskLabel != null) { line3Color = _riskColor; }
@@ -80,21 +88,23 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         var line4 = null as String?;
         var line4Color = Graphics.COLOR_WHITE;
         if (_abnormalDrain) {
-            line4 = "! High background drain";
-            line4Color = 0xFF8800; // orange
+            line4 = tr(Rez.Strings.MsgHighDrain);
+            line4Color = ALERT_COLOR_HIGH_DRAIN;
         } else if (_budgetMin > 0) {
+            var budgetLabel = tr(Rez.Strings.LabelBudget);
+            var unitHour = tr(Rez.Strings.UnitHourShort);
+            var unitMinute = tr(Rez.Strings.UnitMinuteShort);
             if (_budgetMin >= 60) {
                 var bh = _budgetMin / 60;
                 var bm = _budgetMin - bh * 60;
-                line4 = "Budget: " + bh + "h " + bm + "m";
-                line4Color = 0x0055FF; // blue
+                line4 = Lang.format("$1$: $2$$3$ $4$$5$", [budgetLabel, bh, unitHour, bm, unitMinute]);
+                line4Color = BUDGET_COLOR_OK;
             } else {
-                line4 = "Budget: !" + _budgetMin + "m";
-                line4Color = 0xFFAA00; // amber warning
+                line4 = Lang.format("$1$: !$2$$3$", [budgetLabel, _budgetMin, unitMinute]);
+                line4Color = ALERT_COLOR_LOW_BUDGET;
             }
         }
 
-        var gap = 2;
         var h1 = dc.getFontHeight(fontMain);
         var h2 = dc.getFontHeight(fontMain);
         var h3 = dc.getFontHeight(fontSub);
@@ -103,11 +113,23 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         var totalH4 = totalH3 + gap + h4;
 
         // Show 4th line only when it actually fits (avoids clipping on small screens)
-        var showLine4 = (line4 != null) && (totalH4 <= (height - 4));
+        var showLine4 = (line4 != null) && (totalH4 <= (height - (outerPad * 2)));
         var totalH = showLine4 ? totalH4 : totalH3;
+        if (!showLine4 && line4 != null) {
+            // When there is no vertical space for a 4th line, promote the alert/budget info.
+            line3 = line4 as String;
+            line3Color = line4Color;
+        }
+
+        line1 = fitTextToWidth(dc, line1, fontMain, maxLineW);
+        line2 = fitTextToWidth(dc, line2, fontMain, maxLineW);
+        line3 = fitTextToWidth(dc, line3, fontSub, maxLineW);
+        if (showLine4 && line4 != null) {
+            line4 = fitTextToWidth(dc, line4 as String, fontSub, maxLineW);
+        }
 
         var y = ((height - totalH) / 2).toNumber();
-        if (y < 0) { y = 0; }
+        if (y < outerPad) { y = outerPad; }
 
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(x, y, fontMain, line1, Graphics.TEXT_JUSTIFY_LEFT);
@@ -129,7 +151,6 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         _nowBatt = getBatteryPercent();
         _typicalBatt = null;
         _consBatt = null;
-        _optBatt = null;
 
         _riskLabel = null;
         _riskColor = Graphics.COLOR_WHITE;
@@ -163,7 +184,6 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
             var activityRate = readDrainRate("a", :activityGeneric, DEFAULT_ACTIVITY_RATE);
 
             var conservativeFactor = readFactorProperty("conservativeFactor", DEFAULT_CONSERVATIVE_FACTOR, 1.0f, 2.0f);
-            var optimisticFactor = readFactorProperty("optimisticFactor", DEFAULT_OPTIMISTIC_FACTOR, 0.5f, 1.0f);
 
             // The current slot may be partially elapsed - only count remaining minutes.
             // With 60-min slots, remaining = minutes left in the current hour.
@@ -201,7 +221,6 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
             // Solar gain correction
             var solarBonusTypical = 0.0f;
-            var solarBonusOpt = 0.0f;
             var drDict = Storage.getValue("dr");
             if (drDict != null && drDict instanceof Dictionary) {
                 var d = drDict as Dictionary;
@@ -214,31 +233,28 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
                         var solarFraction = recentSol.toFloat() / 100.0f;
                         var totalGain = sgRate * solarFraction * solarMinRemaining.toFloat() / 60.0f;
                         solarBonusTypical = totalGain * 0.5f;
-                        solarBonusOpt = totalGain;
                     }
                 }
             }
 
             var endTypical = clampBattery(_nowBatt.toFloat() - totalDrainTypical + solarBonusTypical);
             var endCons = clampBattery(_nowBatt.toFloat() - (totalDrainTypical * conservativeFactor));
-            var endOpt = clampBattery(_nowBatt.toFloat() - (totalDrainTypical * optimisticFactor) + solarBonusOpt);
 
             _typicalBatt = roundPct(endTypical);
             _consBatt = roundPct(endCons);
-            _optBatt = roundPct(endOpt);
 
             var yellow = readNumberProperty("riskThresholdYellow", DEFAULT_RISK_YELLOW);
             var red = readNumberProperty("riskThresholdRed", DEFAULT_RISK_RED);
 
             var riskBatt = _consBatt as Number;
             if (riskBatt < red) {
-                _riskLabel = RISK_LABEL_HIGH;
+                _riskLabel = tr(Rez.Strings.RiskHigh);
                 _riskColor = 0xFF0000;
             } else if (riskBatt < yellow) {
-                _riskLabel = RISK_LABEL_MEDIUM;
+                _riskLabel = tr(Rez.Strings.RiskMedium);
                 _riskColor = 0xFFFF00;
             } else {
-                _riskLabel = RISK_LABEL_LOW;
+                _riskLabel = tr(Rez.Strings.RiskLow);
                 _riskColor = 0x00FF00;
             }
 
@@ -425,13 +441,59 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
     private function getLeftInset(width as Number) as Number {
         // Leave room for the system-drawn glance icon on the left.
-        var inset = (width * 0.18).toNumber();
-        if (inset < 32) { inset = 32; }
-        if (inset > 80) { inset = 80; }
-        return inset;
+        var inset = (width.toFloat() * 0.18f + 0.5f).toNumber();
+        var minInset = scaleByWidth(width, 0.11f, 18, 40);
+        var maxInset = scaleByWidth(width, 0.28f, minInset + 6, width / 2);
+        return clampNumber(inset, minInset, maxInset);
     }
 
     private function getContentX(width as Number) as Number {
-        return getLeftInset(width) + 2;
+        return getLeftInset(width) + scaleByWidth(width, 0.01f, 1, 4);
+    }
+
+    private function clampNumber(value as Number, minVal as Number, maxVal as Number) as Number {
+        if (value < minVal) { return minVal; }
+        if (value > maxVal) { return maxVal; }
+        return value;
+    }
+
+    private function scaleByHeight(height as Number, factor as Float, minVal as Number, maxVal as Number) as Number {
+        var scaled = (height.toFloat() * factor + 0.5f).toNumber();
+        return clampNumber(scaled, minVal, maxVal);
+    }
+
+    private function scaleByWidth(width as Number, factor as Float, minVal as Number, maxVal as Number) as Number {
+        var scaled = (width.toFloat() * factor + 0.5f).toNumber();
+        return clampNumber(scaled, minVal, maxVal);
+    }
+
+    private function fitTextToWidth(dc as Dc, text as String, font, maxWidth as Number) as String {
+        if (maxWidth <= 0) {
+            return "";
+        }
+        if (dc.getTextWidthInPixels(text, font) <= maxWidth) {
+            return text;
+        }
+
+        var ellipsis = "...";
+        var ellipsisWidth = dc.getTextWidthInPixels(ellipsis, font);
+        if (ellipsisWidth >= maxWidth) {
+            return "";
+        }
+
+        var chars = text.toCharArray();
+        var result = "";
+        for (var i = 0; i < chars.size(); i++) {
+            var candidate = result + chars[i].toString();
+            if (dc.getTextWidthInPixels(candidate, font) + ellipsisWidth > maxWidth) {
+                return result + ellipsis;
+            }
+            result = candidate;
+        }
+        return result;
+    }
+
+    private function tr(resourceId as Lang.ResourceId) as String {
+        return WatchUi.loadResource(resourceId) as String;
     }
 }

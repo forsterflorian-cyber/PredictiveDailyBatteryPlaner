@@ -53,16 +53,25 @@
     <!-- Runtime UI strings (foreground widget) -->
     <string id="Tonight">Tonight</string>
     <string id="Now">Now</string>
+    <string id="NowShort">Now</string>
+    <string id="EodShort">EOD</string>
     <string id="Range">Range</string>
     <string id="Risk">Risk</string>
     <string id="Confidence">Confidence</string>
     <string id="Learning">Learning...</string>
     <string id="LearningTitle">LEARNING</string>
+    <string id="MsgWaitForData">Waiting for data</string>
+    <string id="DaysShort">d</string>
     <string id="IdleOnlyEstimate">(idle-only estimate)</string>
     <string id="NoData">No data yet</string>
     <string id="DaysCollected">days collected</string>
     <string id="None">None</string>
     <string id="BasedOnPattern">Based on your weekly pattern</string>
+    <string id="BasedOnPatternShort">Based on pattern</string>
+    <string id="MsgHighDrain">! High background drain</string>
+    <string id="LabelBudget">Budget</string>
+    <string id="UnitHourShort">h</string>
+    <string id="UnitMinuteShort">m</string>
 
     <!-- Risk levels -->
     <string id="RiskLow">LOW</string>
@@ -82,6 +91,8 @@
 
     <!-- Activity page -->
     <string id="NextActivity">Next Typical Activity</string>
+    <string id="NextActivityShort">Next Activity</string>
+    <string id="NextActivityMin">Activity</string>
     <string id="NoActivityPredicted">No activity predicted</string>
     <string id="MinTypical">min typical</string>
 

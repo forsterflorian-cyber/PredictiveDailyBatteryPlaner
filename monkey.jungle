@@ -2,3 +2,10 @@ project.manifest = manifest.xml
 
 # Base resources
 base.resourcePath = resources
+
+# Device groups by widget RAM (bytes), for release scripting and matrix builds.
+# Values are comma-separated Connect IQ product IDs.
+# groups.widgetRam32k = fenix6,fenix6s
+# groups.widgetRam512k = fr255,fr255s
+# groups.widgetRam768k = epix2,epix2pro42mm,epix2pro47mm,epix2pro51mm,fenix7,fenix7pro,fenix7s,fenix7spro,fenix7x,fenix7xpro,fr255m,fr255sm,fr265,fr265s,fr955,fr965,venu2,venu2plus,venu2s,venu3,venu3s,venusq2,venusq2m,vivoactive5
+# groups.widgetRam1m = fenix6pro,fenix6spro,fenix6xpro

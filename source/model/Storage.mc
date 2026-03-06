@@ -127,7 +127,7 @@ module BatteryBudget {
         // Drain Rates
         //--------------------------------------------------
         
-        private function loadDrainRates() as DrainRates {
+        private function loadDrainRates() as DrainRates? {
             try {
                 var data = Storage.getValue(KEY_DRAIN_RATES);
                 if (data != null && data instanceof Dictionary) {
@@ -223,7 +223,7 @@ module BatteryBudget {
             } catch (ex) {
                 // Fall through to defaults
             }
-            return getDefaultDrainRates();
+            return null;
         }
         
         function getDefaultDrainRates() as DrainRates {
@@ -242,7 +242,10 @@ module BatteryBudget {
         
         function getDrainRates() as DrainRates {
             if (_drainRates == null) {
-                _drainRates = loadDrainRates();
+                var loaded = loadDrainRates();
+                _drainRates = (loaded != null) ? loaded as DrainRates : getDefaultDrainRates();
+                // Persist once to initialize defaults and normalize legacy payloads.
+                saveDrainRates();
             }
             return _drainRates;
         }
@@ -293,13 +296,13 @@ module BatteryBudget {
         // Index: weekday * SLOTS_PER_DAY + slotIndex.
         // Old format (7×48 nested Array<Array<Number>>) is discarded on first load;
         // patterns re-learn within days via the background service.
-        private function loadPattern() as Array<Number> {
+        private function loadPattern() as Array<Number>? {
             try {
                 var data = Storage.getValue(KEY_PATTERN);
                 if (data instanceof Array) {
                     var arr = data as Array;
                     // Accept new flat format: exactly 7*SLOTS_PER_DAY elements of Number
-                    if (arr.size() == 7 * SLOTS_PER_DAY && arr[0] instanceof Number) {
+                    if (isValidFlatPattern(arr)) {
                         return arr as Array<Number>;
                     }
                     // Old nested format or wrong size → discard, start fresh
@@ -307,7 +310,20 @@ module BatteryBudget {
             } catch (ex) {
                 // Fall through to default
             }
-            return createEmptyPattern();
+            return null;
+        }
+
+        private function isValidFlatPattern(arr as Array) as Boolean {
+            var expectedSize = 7 * SLOTS_PER_DAY;
+            if (arr.size() != expectedSize) {
+                return false;
+            }
+            for (var i = 0; i < arr.size(); i++) {
+                if (!(arr[i] instanceof Number)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private function createEmptyPattern() as Array<Number> {
@@ -321,7 +337,13 @@ module BatteryBudget {
 
         function getPattern() as Array<Number> {
             if (_pattern == null) {
-                _pattern = loadPattern();
+                var loaded = loadPattern();
+                if (loaded == null) {
+                    _pattern = createEmptyPattern();
+                    savePattern();
+                } else {
+                    _pattern = loaded;
+                }
             }
             return _pattern;
         }
@@ -394,15 +416,7 @@ module BatteryBudget {
         // Stats (for confidence calculation)
         //--------------------------------------------------
         
-        private function loadStats() as Dictionary {
-            try {
-                var data = Storage.getValue(KEY_STATS);
-                if (data != null && data instanceof Dictionary) {
-                    return data as Dictionary;
-                }
-            } catch (ex) {
-                // Fall through
-            }
+        private function createDefaultStats() as Dictionary {
             return {
                 "firstDataDay" => 0,
                 "totalActivitySegments" => 0,
@@ -411,10 +425,37 @@ module BatteryBudget {
                 "lastDecayTime" => 0
             };
         }
+
+        private function normalizeStats(data as Dictionary) as Dictionary {
+            var stats = createDefaultStats();
+            var keys = ["firstDataDay", "totalActivitySegments", "totalIdleSegments", "slotsCovered", "lastDecayTime"];
+            for (var i = 0; i < keys.size(); i++) {
+                var key = keys[i];
+                if (data.hasKey(key) && data[key] instanceof Number) {
+                    stats[key] = data[key] as Number;
+                }
+            }
+            return stats;
+        }
+
+        private function loadStats() as Dictionary? {
+            try {
+                var data = Storage.getValue(KEY_STATS);
+                if (data != null && data instanceof Dictionary) {
+                    return normalizeStats(data as Dictionary);
+                }
+            } catch (ex) {
+                // Fall through
+            }
+            return null;
+        }
         
         function getStats() as Dictionary {
             if (_stats == null) {
-                _stats = loadStats();
+                var loaded = loadStats();
+                _stats = (loaded != null) ? loaded as Dictionary : createDefaultStats();
+                // Persist once to initialize missing keys / defaults.
+                saveStats();
             }
             return _stats;
         }
@@ -536,19 +577,50 @@ module BatteryBudget {
         // Battery History (compact ring buffer)
         //--------------------------------------------------
 
-        function getBatteryHistory() as Array<Number> {
-            if (_batteryHistory == null) {
-                try {
-                    var data = Storage.getValue(KEY_BATTERY_HISTORY);
-                    if (data instanceof Array) {
-                        var arr = data as Array;
-                        if (arr.size() > 0 && arr[0] instanceof Number) {
-                            _batteryHistory = arr as Array<Number>;
-                            return _batteryHistory;
+        private function loadBatteryHistory() as Array<Number>? {
+            try {
+                var data = Storage.getValue(KEY_BATTERY_HISTORY);
+                if (data instanceof Array) {
+                    var arr = data as Array;
+                    if (arr.size() % 2 != 0) {
+                        return null;
+                    }
+
+                    for (var i = 0; i < arr.size(); i++) {
+                        if (!(arr[i] instanceof Number)) {
+                            return null;
                         }
                     }
+
+                    var maxSize = BATTERY_HISTORY_MAX_PAIRS * 2;
+                    if (arr.size() > maxSize) {
+                        var trimmed = [] as Array<Number>;
+                        var start = arr.size() - maxSize;
+                        for (var j = start; j < arr.size(); j++) {
+                            trimmed.add(arr[j] as Number);
+                        }
+                        return trimmed;
+                    }
+
+                    return arr as Array<Number>;
+                }
+            } catch (ex) {}
+            return null;
+        }
+
+        private function saveBatteryHistory() as Void {
+            if (_batteryHistory != null) {
+                try {
+                    Storage.setValue(KEY_BATTERY_HISTORY, _batteryHistory);
                 } catch (ex) {}
-                _batteryHistory = [] as Array<Number>;
+            }
+        }
+
+        function getBatteryHistory() as Array<Number> {
+            if (_batteryHistory == null) {
+                var loaded = loadBatteryHistory();
+                _batteryHistory = (loaded != null) ? loaded : ([] as Array<Number>);
+                saveBatteryHistory();
             }
             return _batteryHistory;
         }
@@ -565,9 +637,7 @@ module BatteryBudget {
                 if (history.size() > 0) { history.remove(history[0]); }
             }
             _batteryHistory = history;
-            try {
-                Storage.setValue(KEY_BATTERY_HISTORY, history);
-            } catch (ex) {}
+            saveBatteryHistory();
         }
 
         //--------------------------------------------------

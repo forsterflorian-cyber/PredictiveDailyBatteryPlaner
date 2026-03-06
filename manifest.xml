@@ -1,20 +1,25 @@
 <?xml version="1.0"?>
 <iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="5">
-    <iq:application id="21640c05-5430-4209-a54d-65fc002764ad" type="widget" entry="BatteryBudgetApp" launcherIcon="@Drawables.LauncherIcon" name="@Strings.AppName" version="1.0.0" minSdkVersion="3.3.0">
+    <iq:application id="21640c05-5430-4209-a54d-65fc002764ad" type="widget" entry="BatteryBudgetApp" launcherIcon="@Drawables.LauncherIcon" name="@Strings.AppName" version="1.0.0" minSdkVersion="3.2.0">
         <iq:products>
-            <!-- Forerunner -->
+            <!-- Curated release set: all listed devices provide >=32k widget RAM -->
             <!-- Fenix / Epix -->
-            <!-- Venu / Venu Sq / Vivoactive -->
             <iq:product id="epix2"/>
             <iq:product id="epix2pro42mm"/>
             <iq:product id="epix2pro47mm"/>
             <iq:product id="epix2pro51mm"/>
+            <iq:product id="fenix6"/>
+            <iq:product id="fenix6pro"/>
+            <iq:product id="fenix6s"/>
+            <iq:product id="fenix6spro"/>
+            <iq:product id="fenix6xpro"/>
             <iq:product id="fenix7"/>
             <iq:product id="fenix7pro"/>
             <iq:product id="fenix7s"/>
             <iq:product id="fenix7spro"/>
             <iq:product id="fenix7x"/>
             <iq:product id="fenix7xpro"/>
+            <!-- Forerunner -->
             <iq:product id="fr255"/>
             <iq:product id="fr255m"/>
             <iq:product id="fr255s"/>
@@ -23,6 +28,7 @@
             <iq:product id="fr265s"/>
             <iq:product id="fr955"/>
             <iq:product id="fr965"/>
+            <!-- Venu / Venu Sq / Vivoactive -->
             <iq:product id="venu2"/>
             <iq:product id="venu2plus"/>
             <iq:product id="venu2s"/>

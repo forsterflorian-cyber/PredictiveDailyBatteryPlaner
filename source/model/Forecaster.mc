@@ -11,6 +11,7 @@ module BatteryBudget {
         private var _storage as StorageManager;
         private var _drainLearner as DrainLearner;
         private var _patternLearner as PatternLearner;
+        private const MIN_VALID_RATE_SAMPLES = 3;
         
         function initialize() {
             _storage = StorageManager.getInstance();
@@ -35,8 +36,8 @@ module BatteryBudget {
             var endOfDaySlot = TimeUtil.getEndOfDaySlot(endOfDayMinutes);
 
             // Get learned rates
-            var idleRate = _drainLearner.getIdleRate();
-            var activityRate = _drainLearner.getActivityRate();
+            var idleRate = getSafeIdleRate();
+            var activityRate = getSafeActivityRate();
 
             // Resolve dynamic sleep window (UserProfile > app settings > compile-time constant)
             var sleepStartHour = resolveSleepStartHour();
@@ -148,7 +149,7 @@ module BatteryBudget {
             if (lastSnapshot != null) {
                 currentProfile = lastSnapshot[:profile] as Profile;
             }
-            var profileRate = _drainLearner.getProfileRate(currentProfile);
+            var profileRate = getSafeProfileRate(currentProfile, activityRate);
 
             // Solar compensation: each hour of activity under sun reduces the net drain.
             // We credit only 50 % of the expected gain to stay conservative.
@@ -190,8 +191,8 @@ module BatteryBudget {
         function forecastWithPlannedActivity(profile as Profile, durationMinutes as Number) as ForecastResult {
             var base = hasMinimumConfidence() ? forecast() : getSimpleForecast();
 
-            var idleRate = _drainLearner.getIdleRate();
-            var profileRate = _drainLearner.getProfileRate(profile);
+            var idleRate = getSafeIdleRate();
+            var profileRate = getSafeProfileRate(profile, getSafeActivityRate());
 
             // Net extra drain vs just being idle
             var extraPerHour = profileRate - idleRate;
@@ -247,19 +248,28 @@ module BatteryBudget {
                                                  effectiveExtraPerHour as Float,
                                                  targetLevel as Number,
                                                  endSlot as Number, currentSlot as Number) as Number {
+            var remainingSlots = endSlot - currentSlot;
+            if (remainingSlots <= 0) {
+                return 0;
+            }
+
             var headroom = nowBatt - totalDrain - targetLevel.toFloat();
             if (headroom <= 0.0f) {
                 return 0;
             }
 
+            var maxMin = remainingSlots * SLOT_DURATION_MIN;
+            if (effectiveExtraPerHour <= 0.0f) {
+                return maxMin;
+            }
+
             var extraPerMinute = effectiveExtraPerHour / 60.0f;
             if (extraPerMinute <= 0.0f) {
                 // Activity costs no more than idle (e.g. strong solar) – unconstrained
-                return (endSlot - currentSlot) * SLOT_DURATION_MIN;
+                return maxMin;
             }
 
             var budgetMin = (headroom / extraPerMinute).toNumber();
-            var maxMin = (endSlot - currentSlot) * SLOT_DURATION_MIN;
             if (budgetMin > maxMin) { budgetMin = maxMin; }
             if (budgetMin < 0)      { budgetMin = 0; }
             return budgetMin;
@@ -304,7 +314,7 @@ module BatteryBudget {
         // Get simple idle-only forecast (for low confidence mode)
         function getSimpleForecast() as ForecastResult {
             var nowBatt = getBatteryPercent();
-            var idleRate = _drainLearner.getIdleRate();
+            var idleRate = getSafeIdleRate();
             
             var endOfDayMinutes = _storage.getEndOfDayMinutes();
             var minutesRemaining = TimeUtil.getMinutesUntilTime(endOfDayMinutes);
@@ -396,6 +406,51 @@ module BatteryBudget {
         // Get current battery for display
         function getCurrentBattery() as Number {
             return getBatteryPercent();
+        }
+
+        private function getSampleCountSafe(key as Symbol) as Number {
+            try {
+                var rates = _storage.getDrainRates();
+                var counts = rates[:sampleCounts];
+                if (counts != null && counts.hasKey(key) && counts[key] instanceof Number) {
+                    return counts[key] as Number;
+                }
+            } catch (ex) {}
+            return 0;
+        }
+
+        private function getSafeIdleRate() as Float {
+            if (getSampleCountSafe(:idle) < MIN_VALID_RATE_SAMPLES) {
+                return DEFAULT_RATE_IDLE;
+            }
+
+            try {
+                var rate = _drainLearner.getIdleRate();
+                if (rate >= MIN_RATE && rate <= MAX_RATE) {
+                    return rate;
+                }
+            } catch (ex) {}
+            return DEFAULT_RATE_IDLE;
+        }
+
+        private function getSafeActivityRate() as Float {
+            try {
+                var rate = _drainLearner.getActivityRate();
+                if (rate >= MIN_RATE && rate <= MAX_RATE) {
+                    return rate;
+                }
+            } catch (ex) {}
+            return DEFAULT_RATE_ACTIVITY;
+        }
+
+        private function getSafeProfileRate(profile as Profile, fallback as Float) as Float {
+            try {
+                var rate = _drainLearner.getProfileRate(profile);
+                if (rate >= MIN_RATE && rate <= MAX_RATE) {
+                    return rate;
+                }
+            } catch (ex) {}
+            return fallback;
         }
         
         // Get learned rates for display
