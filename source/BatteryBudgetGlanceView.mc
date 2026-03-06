@@ -24,6 +24,28 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
     private const ALERT_COLOR_HIGH_DRAIN = 0xFF6600;
     private const ALERT_COLOR_LOW_BUDGET = 0xFFB000;
     private const BUDGET_COLOR_OK = 0x3399FF;
+    private const RISK_CODE_LOW = "LOW";
+    private const RISK_CODE_MEDIUM = "MED";
+    private const RISK_CODE_HIGH = "HIGH";
+    private const LABEL_NOW = "Now";
+    private const LABEL_EOD = "EOD";
+    private const LABEL_RISK = "Risk";
+    private const LABEL_LEARNING = "Learning...";
+    private const LABEL_WAIT_DATA = "Waiting for data";
+    private const LABEL_DAYS_SHORT = "d";
+    private const LABEL_HIGH_DRAIN = "! High background drain";
+    private const LABEL_BUDGET = "Budget";
+    private const LABEL_HOUR_SHORT = "h";
+    private const LABEL_MINUTE_SHORT = "m";
+    private const LABEL_NOW_DE = "Jetzt";
+    private const LABEL_RISK_DE = "Risiko";
+    private const LABEL_LEARNING_DE = "Lernt...";
+    private const LABEL_WAIT_DATA_DE = "Warte auf Daten";
+    private const LABEL_DAYS_SHORT_DE = "T";
+    private const LABEL_HIGH_DRAIN_DE = "! Hoher Leerlauf";
+    private const LABEL_RISK_LOW_DE = "NIED";
+    private const LABEL_RISK_MEDIUM_DE = "MIT";
+    private const LABEL_RISK_HIGH_DE = "HOCH";
 
     private var _nowBatt as Number = 50;
     private var _typicalBatt as Number? = null;
@@ -36,16 +58,20 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
     private var _endOfDayLabel as String = DEFAULT_END_OF_DAY;
     private var _budgetMin as Number = 0;
     private var _abnormalDrain as Boolean = false;
+    private var _isGerman as Boolean = false;
 
     function initialize() {
         GlanceView.initialize();
+        _isGerman = detectGermanLanguage();
     }
 
     function onShow() as Void {
+        _isGerman = detectGermanLanguage();
         updateData();
     }
 
     function onUpdate(dc as Dc) as Void {
+        try {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
 
@@ -64,22 +90,27 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         var gap = scaleByHeight(height, 0.016f, 1, 5);
         var outerPad = scaleByHeight(height, 0.018f, 1, 6);
 
-        var nowLabel = tr(Rez.Strings.NowShort);
-        var line1 = Lang.format("$1$: $2$%", [nowLabel, _nowBatt]);
+        var labelNow = localizeLabel(LABEL_NOW, LABEL_NOW_DE);
+        var labelRisk = localizeLabel(LABEL_RISK, LABEL_RISK_DE);
+        var labelLearning = localizeLabel(LABEL_LEARNING, LABEL_LEARNING_DE);
+        var labelWaitData = localizeLabel(LABEL_WAIT_DATA, LABEL_WAIT_DATA_DE);
+        var labelDaysShort = localizeLabel(LABEL_DAYS_SHORT, LABEL_DAYS_SHORT_DE);
+        var labelHighDrain = localizeLabel(LABEL_HIGH_DRAIN, LABEL_HIGH_DRAIN_DE);
+        var line1 = Lang.format("$1$: $2$%", [labelNow, _nowBatt]);
 
         var line2;
         if (_typicalBatt != null) {
-            line2 = Lang.format("$1$ $2$: ~$3$%", [tr(Rez.Strings.EodShort), _endOfDayLabel, (_typicalBatt as Number)]);
+            line2 = Lang.format("$1$ $2$: ~$3$%", [LABEL_EOD, _endOfDayLabel, (_typicalBatt as Number)]);
         } else {
-            line2 = Lang.format("$1$ $2$: $3$", [tr(Rez.Strings.EodShort), _endOfDayLabel, tr(Rez.Strings.Learning)]);
+            line2 = Lang.format("$1$ $2$: $3$", [LABEL_EOD, _endOfDayLabel, labelLearning]);
         }
 
         var line3;
-        var daySuffix = tr(Rez.Strings.DaysShort);
+        var daySuffix = labelDaysShort;
         if (_typicalBatt != null && _riskLabel != null) {
-            line3 = Lang.format("$1$ $2$ | $3$$4$", [tr(Rez.Strings.Risk), (_riskLabel as String), _daysCollected, daySuffix]);
+            line3 = Lang.format("$1$ $2$ | $3$$4$", [labelRisk, displayRiskLabel(_riskLabel as String), _daysCollected, daySuffix]);
         } else {
-            line3 = Lang.format("$1$ | $2$$3$", [tr(Rez.Strings.MsgWaitForData), _daysCollected, daySuffix]);
+            line3 = Lang.format("$1$ | $2$$3$", [labelWaitData, _daysCollected, daySuffix]);
         }
         var line3Color = Graphics.COLOR_WHITE;
         if (_riskLabel != null) { line3Color = _riskColor; }
@@ -88,12 +119,12 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         var line4 = null as String?;
         var line4Color = Graphics.COLOR_WHITE;
         if (_abnormalDrain) {
-            line4 = tr(Rez.Strings.MsgHighDrain);
+            line4 = labelHighDrain;
             line4Color = ALERT_COLOR_HIGH_DRAIN;
         } else if (_budgetMin > 0) {
-            var budgetLabel = tr(Rez.Strings.LabelBudget);
-            var unitHour = tr(Rez.Strings.UnitHourShort);
-            var unitMinute = tr(Rez.Strings.UnitMinuteShort);
+            var budgetLabel = LABEL_BUDGET;
+            var unitHour = LABEL_HOUR_SHORT;
+            var unitMinute = LABEL_MINUTE_SHORT;
             if (_budgetMin >= 60) {
                 var bh = _budgetMin / 60;
                 var bm = _budgetMin - bh * 60;
@@ -144,6 +175,9 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
             dc.setColor(line4Color, Graphics.COLOR_TRANSPARENT);
             dc.drawText(x, y + h1 + gap + h2 + gap + h3 + gap, fontSub,
                 line4 as String, Graphics.TEXT_JUSTIFY_LEFT);
+        }
+        } catch (ex) {
+            drawSafeFallback(dc);
         }
     }
 
@@ -248,13 +282,13 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
             var riskBatt = _consBatt as Number;
             if (riskBatt < red) {
-                _riskLabel = tr(Rez.Strings.RiskHigh);
+                _riskLabel = RISK_CODE_HIGH;
                 _riskColor = 0xFF0000;
             } else if (riskBatt < yellow) {
-                _riskLabel = tr(Rez.Strings.RiskMedium);
+                _riskLabel = RISK_CODE_MEDIUM;
                 _riskColor = 0xFFFF00;
             } else {
-                _riskLabel = tr(Rez.Strings.RiskLow);
+                _riskLabel = RISK_CODE_LOW;
                 _riskColor = 0x00FF00;
             }
 
@@ -493,7 +527,39 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         return result;
     }
 
-    private function tr(resourceId as Lang.ResourceId) as String {
-        return WatchUi.loadResource(resourceId) as String;
+    private function displayRiskLabel(riskCode as String) as String {
+        if (_isGerman) {
+            if (riskCode == RISK_CODE_HIGH) { return LABEL_RISK_HIGH_DE; }
+            if (riskCode == RISK_CODE_MEDIUM) { return LABEL_RISK_MEDIUM_DE; }
+            if (riskCode == RISK_CODE_LOW) { return LABEL_RISK_LOW_DE; }
+        }
+        return riskCode;
+    }
+
+    private function localizeLabel(english as String, german as String) as String {
+        return _isGerman ? german : english;
+    }
+
+    private function detectGermanLanguage() as Boolean {
+        try {
+            var settings = System.getDeviceSettings();
+            if (settings has :systemLanguage) {
+                return settings.systemLanguage == System.LANGUAGE_DEU;
+            }
+        } catch (ex) {
+        }
+        return false;
+    }
+
+    private function drawSafeFallback(dc as Dc) as Void {
+        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
+        dc.clear();
+        var cx = dc.getWidth() / 2;
+        var cy = dc.getHeight() / 2;
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy - dc.getFontHeight(Graphics.FONT_XTINY), Graphics.FONT_XTINY,
+            "BatteryBudget", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, cy, Graphics.FONT_XTINY,
+            localizeLabel("Waiting for data", "Warte auf Daten"), Graphics.TEXT_JUSTIFY_CENTER);
     }
 }
