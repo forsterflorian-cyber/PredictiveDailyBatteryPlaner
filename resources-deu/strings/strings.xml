@@ -91,7 +91,7 @@
 
     <!-- Activity page -->
     <string id="NextActivity">Nächste Aktivität</string>
-    <string id="NextActivityShort">Naechste Aktiv.</string>
+    <string id="NextActivityShort">Nächste Aktiv.</string>
     <string id="NextActivityMin">Aktiv.</string>
     <string id="NoActivityPredicted">Keine Aktivität erwartet</string>
     <string id="MinTypical">Min typisch</string>

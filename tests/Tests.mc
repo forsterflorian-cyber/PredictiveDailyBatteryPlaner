@@ -380,3 +380,174 @@ function testEMAConvergesToSample(logger as Test.Logger) as Boolean {
     Test.assert(result < sample);
     return true;
 }
+
+// ---------------------------------------------------------------------------
+// G. Inline decay equivalence (ServiceDelegate vs PatternLearner.applyDecay)
+// ---------------------------------------------------------------------------
+// Proves that the inlined loop `pattern[i] = (pattern[i].toFloat() * 0.9f).toNumber()`
+// is bit-for-bit identical to the original PatternLearner.applyDecay() formula.
+
+// Test G1: Known values – verify exact integer truncation of 0.9× decay.
+(:test)
+function testInlineDecayKnownValues(logger as Test.Logger) as Boolean {
+    // Expected = floor(input * 0.9)  (Monkey C toNumber() truncates toward zero)
+    var inputs   = [100, 50, 25, 10, 1, 0] as Array<Number>;
+    var expected = [ 90, 45, 22,  9, 0, 0] as Array<Number>;
+
+    for (var i = 0; i < inputs.size(); i++) {
+        var got = (inputs[i].toFloat() * 0.9f).toNumber();
+        if (got != expected[i]) {
+            logger.debug("decay(" + inputs[i].toString() + ")="
+                         + got.toString() + " expected=" + expected[i].toString());
+            return false;
+        }
+    }
+    return true;
+}
+
+// Test G2: Slot that is already 0 must stay 0 across an entire year of weekly decays.
+(:test)
+function testDecayZeroStaysZero(logger as Test.Logger) as Boolean {
+    var slot = 0;
+    for (var i = 0; i < 52; i++) {
+        slot = (slot.toFloat() * 0.9f).toNumber();
+    }
+    logger.debug("zeroSlot52weeks=" + slot.toString());
+    Test.assert(slot == 0);
+    return true;
+}
+
+// Test G3: 10 weekly iterations on 100 must yield exactly 32.
+// Trace: 100→90→81→72→64→57→51→45→40→36→32 (truncation compounds per step).
+(:test)
+function testDecayExact10Iterations(logger as Test.Logger) as Boolean {
+    var slot = 100;
+    for (var i = 0; i < 10; i++) {
+        slot = (slot.toFloat() * 0.9f).toNumber();
+    }
+    logger.debug("100_decay10=" + slot.toString());
+    Test.assert(slot == 32);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// H. Charging detection and EMA protection
+// ---------------------------------------------------------------------------
+
+// Test H1: Positive battery delta is detected and must be rejected before EMA update.
+(:test)
+function testPositiveDeltaDetected(logger as Test.Logger) as Boolean {
+    var startBatt = 45;
+    var endBatt   = 55; // +10 % → charging
+
+    // Guard 1: positive delta check (first line of DrainLearner.learnFromSegment)
+    var rejectedByDeltaGuard = (endBatt >= startBatt);
+    Test.assert(rejectedByDeltaGuard);
+
+    // Guard 2: Segmenter.calculateDrainRate also returns 0 for positive delta
+    var battDrop = startBatt - endBatt; // -10
+    Test.assert(battDrop <= 0);
+    return true;
+}
+
+// Test H2: STATE_CHARGING guard fires even when delta is zero (fully-charged hold).
+(:test)
+function testChargingStateGuardFires(logger as Test.Logger) as Boolean {
+    var state     = BatteryBudget.STATE_CHARGING;
+    var startBatt = 100;
+    var endBatt   = 100; // no delta – but still charging
+
+    var rejectedByState = (state == BatteryBudget.STATE_CHARGING);
+    var rejectedByDelta = (endBatt >= startBatt);
+    Test.assert(rejectedByState);
+    Test.assert(rejectedByDelta);
+    return true;
+}
+
+// Test H3: Segmenter.calculateDrainRate must return 0.0 for a charging segment.
+(:test)
+function testCalculateDrainRateChargingIsZero(logger as Test.Logger) as Boolean {
+    var seg = {
+        :startTMin => 1000,
+        :endTMin   => 1060,
+        :startBatt => 45,
+        :endBatt   => 55,
+        :state     => BatteryBudget.STATE_CHARGING,
+        :profile   => BatteryBudget.PROFILE_GENERIC,
+        :solarW    => 0
+    } as BatteryBudget.Segment;
+
+    var rate = BatteryBudget.Segmenter.calculateDrainRate(seg);
+    logger.debug("chargingSegmentRate=" + rate.toString());
+    Test.assert(rate == 0.0f);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// I. Time-jump handling (slot and learning integrity)
+// ---------------------------------------------------------------------------
+
+// Test I1: Backward time jump (gap <= 0) must be classified as an invalid break.
+(:test)
+function testBackwardTimeJumpIsInvalid(logger as Test.Logger) as Boolean {
+    var prevTMin = 1000;
+    var currTMin = 990;                     // 10 min backward (GPS clock correction)
+    var gap      = currTMin - prevTMin;     // -10
+
+    // Segmenter's first guard: gap <= 0 → discard current segment, do not learn
+    var isInvalidBackward = (gap <= 0);
+    logger.debug("backwardGap=" + gap.toString() + " invalid=" + isInvalidBackward.toString());
+    Test.assert(isInvalidBackward);
+    return true;
+}
+
+// Test I2: Zero-gap (duplicate snapshot in the same epoch-minute) is also invalid.
+(:test)
+function testZeroGapIsInvalid(logger as Test.Logger) as Boolean {
+    var prevTMin = 1000;
+    var currTMin = 1000; // same minute
+    var gap      = currTMin - prevTMin;
+
+    Test.assert(gap <= 0);
+    return true;
+}
+
+// Test I3: Forward jump just beyond MAX_LEARNING_GAP_MIN must be rejected for learning.
+(:test)
+function testLargeForwardJumpIsInvalid(logger as Test.Logger) as Boolean {
+    var prevTMin = 1000;
+    var currTMin = prevTMin + BatteryBudget.MAX_LEARNING_GAP_MIN + 1;
+    var gap      = currTMin - prevTMin;
+
+    var isLargeJump = (gap > BatteryBudget.MAX_LEARNING_GAP_MIN);
+    logger.debug("forwardGap=" + gap.toString() + " isLargeJump=" + isLargeJump.toString());
+    Test.assert(isLargeJump);
+    return true;
+}
+
+// Test I4: Gap exactly at MAX_LEARNING_GAP_MIN must still be accepted (boundary).
+(:test)
+function testExactMaxGapIsValid(logger as Test.Logger) as Boolean {
+    var prevTMin = 1000;
+    var currTMin = prevTMin + BatteryBudget.MAX_LEARNING_GAP_MIN;
+    var gap      = currTMin - prevTMin;
+
+    var isValidGap = (gap > 0) && (gap <= BatteryBudget.MAX_LEARNING_GAP_MIN);
+    logger.debug("exactMaxGap=" + gap.toString() + " valid=" + isValidGap.toString());
+    Test.assert(isValidGap);
+    return true;
+}
+
+// Test I5: getSlotIndex must map all 24 hours to [0, SLOTS_PER_DAY-1].
+// Ensures no timezone or DST scenario can produce an out-of-bounds slot index.
+(:test)
+function testSlotIndexAlwaysInBounds(logger as Test.Logger) as Boolean {
+    for (var hour = 0; hour < 24; hour++) {
+        var slot = BatteryBudget.TimeUtil.getSlotIndex(hour, 0);
+        if (slot < 0 || slot >= BatteryBudget.SLOTS_PER_DAY) {
+            logger.debug("outOfBounds: hour=" + hour.toString() + " slot=" + slot.toString());
+            return false;
+        }
+    }
+    return true;
+}

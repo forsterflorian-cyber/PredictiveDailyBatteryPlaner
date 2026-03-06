@@ -13,30 +13,44 @@ module BatteryBudget {
         
         // Process a pair of snapshots and potentially create/extend the current segment
         function processSnapshotPair(prev as Snapshot, curr as Snapshot) as Void {
-            var currentSegment = _storage.getCurrentSegment();
-            var shouldCreateNew = false;
-            var isGapBreak = false;  // true when the break is caused by a time gap (not state change)
+            var gap = (curr[:tMin] as Number) - (prev[:tMin] as Number);
 
-            if (currentSegment == null) {
-                shouldCreateNew = true;
-            } else {
-                // Check for state/profile change (also covers charging transitions)
+            // ── Time-integrity guards ────────────────────────────────────────────────
+            // Backward or zero-gap: clock correction (GPS sync, DST fall-back) or
+            // duplicate snapshot.  Epoch-minute data in the current in-progress segment
+            // may already be based on the wrong (fast) clock, so discard it entirely
+            // without learning and wait for a fresh forward-going pair.
+            if (gap <= 0) {
+                _storage.setCurrentSegment(null);
+                return;
+            }
+
+            // Large forward gap: device was off, rebooted, or had a GPS-sync jump that
+            // advanced the clock by more than MAX_LEARNING_GAP_MIN.  The interval
+            // prev→curr is invalid for learning, but the in-progress segment up to
+            // `prev` was recorded before the jump and its data is valid – finalise it.
+            if (gap > MAX_LEARNING_GAP_MIN) {
+                var existing = _storage.getCurrentSegment();
+                if (existing != null) {
+                    finalizeSegment(existing as Segment, prev);
+                }
+                _storage.setCurrentSegment(null);
+                return;
+            }
+            // ────────────────────────────────────────────────────────────────────────
+
+            var currentSegment = _storage.getCurrentSegment();
+            var shouldCreateNew = (currentSegment == null);
+
+            if (currentSegment != null) {
+                // State or profile change (also covers charging transitions)
                 if (prev[:state] != curr[:state] || prev[:profile] != curr[:profile]) {
                     shouldCreateNew = true;
                 }
 
-                // Check for time gap or backward time.
-                // Gaps larger than MAX_LEARNING_GAP_MIN mean the watch was off / rebooted /
-                // had a clock jump – the interval is invalid for learning.
-                var gap = curr[:tMin] - prev[:tMin];
-                if (gap <= 0 || gap > MAX_LEARNING_GAP_MIN) {
-                    shouldCreateNew = true;
-                    isGapBreak = true;
-                }
-
-                // Check if segment duration would be too long (> 4 hours)
+                // Segment duration cap (> 4 hours → split for accuracy)
                 if (!shouldCreateNew) {
-                    var potentialDuration = curr[:tMin] - (currentSegment[:startTMin] as Number);
+                    var potentialDuration = (curr[:tMin] as Number) - (currentSegment[:startTMin] as Number);
                     if (potentialDuration > 240) {
                         shouldCreateNew = true;
                     }
@@ -44,19 +58,11 @@ module BatteryBudget {
             }
 
             if (shouldCreateNew) {
-                // Finalize previous segment if exists
                 if (currentSegment != null) {
                     finalizeSegment(currentSegment as Segment, prev);
                 }
 
-                if (isGapBreak) {
-                    // The interval prev→curr spans a large gap and must not be learned from.
-                    // Reset to null; the next pair will start a fresh segment.
-                    _storage.setCurrentSegment(null);
-                    return;
-                }
-
-                // Start new segment (represents the interval prev->curr with curr state)
+                // Start new segment representing the interval prev→curr
                 var newSegment = {
                     :startTMin => prev[:tMin],
                     :endTMin => curr[:tMin],
@@ -66,10 +72,9 @@ module BatteryBudget {
                     :profile => curr[:profile],
                     :solarW => ((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2
                 } as Segment;
-
                 _storage.setCurrentSegment(newSegment);
             } else {
-                // Extend current segment (create new to avoid mutating cached reference)
+                // Extend current segment (new object to avoid mutating cached reference)
                 var seg = currentSegment as Segment;
                 var extendedSegment = {
                     :startTMin => seg[:startTMin],

@@ -6,9 +6,9 @@ import Toybox.System;
 import Toybox.Background;
 import Toybox.Time;
 
-(:background :glance)
 class BatteryBudgetApp extends Application.AppBase {
 
+    (:background :glance)
     function initialize() {
         AppBase.initialize();
     }
@@ -30,14 +30,17 @@ class BatteryBudgetApp extends Application.AppBase {
         return [view, delegate];
     }
 
+    (:glance)
     function getGlanceView() as [GlanceView] or [GlanceView, GlanceViewDelegate] or Null {
         return [new BatteryBudgetGlanceView()];
     }
 
+    (:background)
     function getServiceDelegate() as [System.ServiceDelegate] {
         return [new BatteryBudgetServiceDelegate()];
     }
 
+    (:background)
     function onBackgroundData(data as Application.PersistableType) as Void {
         // No-op: background delegate handles logging + scheduling.
     }
@@ -69,17 +72,14 @@ class BatteryBudgetApp extends Application.AppBase {
             var duration = new Time.Duration(interval * 60);
             var now = Time.now();
             var lastTime = Background.getLastTemporalEventTime();
-            var nextTime;
-
+            // Default: schedule from now. Override with lastTime-relative
+            // scheduling when available and result is still in the future.
+            var nextTime = now.add(duration) as Time.Moment;
             if (lastTime != null) {
-                // Schedule next event relative to last run, but never in the past
-                nextTime = lastTime.add(duration);
-                if (nextTime.value() <= now.value()) {
-                    nextTime = now.add(duration);
+                var candidate = lastTime.add(duration) as Time.Moment;
+                if (candidate.value() > now.value()) {
+                    nextTime = candidate;
                 }
-            } else {
-                // First registration - schedule for intervalMin from now
-                nextTime = now.add(duration);
             }
 
             Background.registerForTemporalEvent(nextTime);

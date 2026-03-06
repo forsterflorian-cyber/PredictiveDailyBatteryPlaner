@@ -199,8 +199,13 @@ class BatteryBudgetDetailView extends WatchUi.View {
     }
 
     // Build the solar-gain estimate string for the last 24 h.
+    // Shows "Kalibr." when the solar bonus is suppressed after a charge cycle.
     private function buildSolarGainStr() as String {
         try {
+            // Show calibrating hint when post-charge suppression is active
+            if (_forecast != null && (_forecast as BatteryBudget.ForecastResult)[:solarSuppressed] == true) {
+                return tr(Rez.Strings.SolarGain24h) + ": Kalibr.";
+            }
             var rates = BatteryBudget.StorageManager.getInstance().getDrainRates();
             var sgv = rates[:solarGain] as Float;
             var rsv = rates[:recentSolar] as Number;

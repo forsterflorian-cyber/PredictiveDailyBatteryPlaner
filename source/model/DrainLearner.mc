@@ -16,6 +16,17 @@ module BatteryBudget {
         
         // Learn from a finalized segment
         function learnFromSegment(segment as Segment) as Void {
+            // Strict double-guard: reject positive battery delta and charging state.
+            // Segmenter.isValidForLearning() already filters these, but an explicit
+            // guard here protects the EMA against future call-site regressions and
+            // ensures a charging event can never dilute the historical decay rate.
+            if ((segment[:endBatt] as Number) >= (segment[:startBatt] as Number)) {
+                return;
+            }
+            if (segment[:state] == STATE_CHARGING) {
+                return;
+            }
+
             // Calculate drain rate
             var rate = Segmenter.calculateDrainRate(segment);
             

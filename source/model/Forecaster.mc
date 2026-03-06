@@ -96,13 +96,23 @@ module BatteryBudget {
                 }
             }
 
-            // Apply solar gain correction (only when learned and recent solar is meaningful)
+            // Post-charge reset trigger: when the battery rose since the last recorded
+            // snapshot a charge cycle just ended.  The recentSolar EMA stopped updating
+            // during charging (charging segments are filtered by DrainLearner), so its
+            // cached value may be stale or reflect plugged-in conditions rather than
+            // real sun exposure.  Suppress the solar bonus for this one forecast cycle
+            // so the drain curve resets cleanly from the verified post-charge battery.
+            var lastSnap = _storage.getLastSnapshot();
+            var isPostCharge = (lastSnap != null)
+                && ((lastSnap[:state] == STATE_CHARGING)
+                    || ((lastSnap[:battPct] as Number) < nowBatt));
+
             var solarBonusTypical = 0.0f;
             var solarBonusOptimistic = 0.0f;
             var rates = _storage.getDrainRates();
             var solarGainRate = rates[:solarGain] as Float;
             var recentSolar = rates[:recentSolar] as Number;
-            if (solarGainRate > 0.0f && recentSolar > 10) {
+            if (!isPostCharge && solarGainRate > 0.0f && recentSolar > 10) {
                 var solarFraction = recentSolar.toFloat() / 100.0f;
                 var solarHoursRemaining = solarMinutesRemaining.toFloat() / 60.0f;
                 var totalSolarGain = solarGainRate * solarFraction * solarHoursRemaining;
@@ -145,16 +155,16 @@ module BatteryBudget {
             // targetLevelVal. Uses the last snapshot's profile for a profile-specific drain
             // rate and applies 50% of the current solar gain as a conservative compensation.
             var currentProfile = PROFILE_GENERIC;
-            var lastSnapshot = _storage.getLastSnapshot();
-            if (lastSnapshot != null) {
-                currentProfile = lastSnapshot[:profile] as Profile;
+            if (lastSnap != null) {
+                currentProfile = lastSnap[:profile] as Profile;
             }
             var profileRate = getSafeProfileRate(currentProfile, activityRate);
 
             // Solar compensation: each hour of activity under sun reduces the net drain.
+            // Suppressed post-charge for the same reason as solarBonusTypical above.
             // We credit only 50 % of the expected gain to stay conservative.
             var solarCompPerHour = 0.0f;
-            if (solarGainRate > 0.0f && recentSolar > 20) {
+            if (!isPostCharge && solarGainRate > 0.0f && recentSolar > 20) {
                 var solarFrac = recentSolar.toFloat() / 100.0f;
                 solarCompPerHour = solarGainRate * solarFrac * 0.5f;
             }
@@ -180,7 +190,8 @@ module BatteryBudget {
                 :nextActivityDrain => nextActivityDrain != null ? nextActivityDrain.toNumber() : null,
                 :remainingActivityMinutes => remainingActivityMinutes,
                 :abnormalDrain => abnormalDrain,
-                :dataPointsPerProfile => dataPointsPerProfile
+                :dataPointsPerProfile => dataPointsPerProfile,
+                :solarSuppressed => isPostCharge
             } as ForecastResult;
         }
 
@@ -322,12 +333,18 @@ module BatteryBudget {
             
             var drain = idleRate * hoursRemaining;
 
-            // Apply solar gain (typical only; simple forecast is conservative by nature)
+            // Apply solar gain (typical only; simple forecast is conservative by nature).
+            // Same post-charge suppression as in forecast(): recentSolar may be stale
+            // after a charging cycle, so suppress the bonus until we have a fresh reading.
             var solarBonus = 0.0f;
             var simplRates = _storage.getDrainRates();
             var simplSolarGainRate = simplRates[:solarGain] as Float;
             var simplRecentSolar = simplRates[:recentSolar] as Number;
-            if (simplSolarGainRate > 0.0f && simplRecentSolar > 10) {
+            var simplLastSnap = _storage.getLastSnapshot();
+            var simplIsPostCharge = (simplLastSnap != null)
+                && ((simplLastSnap[:state] == STATE_CHARGING)
+                    || ((simplLastSnap[:battPct] as Number) < nowBatt));
+            if (!simplIsPostCharge && simplSolarGainRate > 0.0f && simplRecentSolar > 10) {
                 var solarFraction = simplRecentSolar.toFloat() / 100.0f;
                 solarBonus = simplSolarGainRate * solarFraction * hoursRemaining * 0.5f;
             }
@@ -351,7 +368,8 @@ module BatteryBudget {
                 :nextActivityDrain => null,
                 :remainingActivityMinutes => 0,
                 :abnormalDrain => _drainLearner.isAbnormalDrain(),
-                :dataPointsPerProfile => _drainLearner.getProfileSampleCounts()
+                :dataPointsPerProfile => _drainLearner.getProfileSampleCounts(),
+                :solarSuppressed => simplIsPostCharge
             } as ForecastResult;
         }
         

@@ -36,12 +36,11 @@ class BatteryBudgetDetailDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    // Handle menu button (if applicable)
+    // Handle menu button: let the system handle it (e.g. long-press menu on Fenix).
+    // Returning false avoids a conflict where the UP button triggers onMenu() on
+    // button-based devices, which would advance pages instead of going back.
     function onMenu() as Boolean {
-        // Could show settings or additional info
-        // For now, just cycle pages
-        _view.nextPage();
-        return true;
+        return false;
     }
 
     // Handle key events

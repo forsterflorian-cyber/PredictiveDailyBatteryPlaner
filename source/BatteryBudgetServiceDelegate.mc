@@ -13,47 +13,37 @@ class BatteryBudgetServiceDelegate extends System.ServiceDelegate {
     // Called when temporal event fires
     function onTemporalEvent() as Void {
         var storage = BatteryBudget.StorageManager.getInstance();
-
-        // Take snapshot in background
         var logger = new BatteryBudget.SnapshotLogger();
-        logger.logSnapshot();
 
-        // Save data
+        logger.logSnapshot();
         storage.saveAll();
 
-        // Cleanup old segments periodically
         var settings = storage.getSettings();
         var windowDays = settings[:learningWindowDays];
         if (windowDays == null || !(windowDays instanceof Number)) { windowDays = 14; }
-
         storage.cleanupOldSegments(windowDays as Number);
 
-        // Apply pattern decay weekly (check if it's been a week)
-        applyWeeklyDecayIfNeeded();
+        // Apply pattern decay weekly; inline to avoid PatternLearner allocation.
+        applyWeeklyDecayIfNeeded(storage);
 
-        // Temporal background events are one-shot; schedule next run now.
-        scheduleNextTemporalEvent(settings);
+        // Temporal background events are one-shot; reuse logger instance.
+        scheduleNextTemporalEvent(storage, logger);
 
-        // Return status to app
         Background.exit({"status" => "ok", "time" => Time.now().value()});
     }
-    
+
     // Temporal events are one-shot; schedule the next one.
-    // Uses the adaptive interval from SnapshotLogger so high-drain states
-    // (activity, charging) are sampled more frequently than idle/sleep.
-    private function scheduleNextTemporalEvent(settings as Dictionary) as Void {
+    // Reuses the already-allocated logger to determine the adaptive interval.
+    private function scheduleNextTemporalEvent(storage as BatteryBudget.StorageManager,
+                                               logger as BatteryBudget.SnapshotLogger) as Void {
         try {
-            var storage = BatteryBudget.StorageManager.getInstance();
             var lastSnapshot = storage.getLastSnapshot();
             var currentState = BatteryBudget.STATE_IDLE as BatteryBudget.State;
             if (lastSnapshot != null) {
                 currentState = lastSnapshot[:state] as BatteryBudget.State;
             }
 
-            var logger = new BatteryBudget.SnapshotLogger();
             var interval = logger.getAdaptiveInterval(currentState);
-
-            // Garmin minimum temporal event interval is 5 minutes
             if (interval < 5) { interval = 5; }
 
             var nextTime = Time.now().add(new Time.Duration(interval * 60));
@@ -63,18 +53,18 @@ class BatteryBudgetServiceDelegate extends System.ServiceDelegate {
         }
     }
 
-    // Apply weekly decay to pattern if needed
-    private function applyWeeklyDecayIfNeeded() as Void {
-        var storage = BatteryBudget.StorageManager.getInstance();
+    // Apply weekly decay to the pattern array without allocating a PatternLearner.
+    private function applyWeeklyDecayIfNeeded(storage as BatteryBudget.StorageManager) as Void {
         var stats = storage.getStats();
-        
         var lastDecayTime = stats.hasKey("lastDecayTime") ? stats["lastDecayTime"] as Number : 0;
         var nowSec = Time.now().value().toNumber();
-        var weekSeconds = 7 * 24 * 60 * 60;
 
-        if (lastDecayTime == 0 || (nowSec - lastDecayTime) >= weekSeconds) {
-            var patternLearner = new BatteryBudget.PatternLearner();
-            patternLearner.applyDecay();
+        if (lastDecayTime == 0 || (nowSec - lastDecayTime) >= (7 * 24 * 60 * 60)) {
+            var pattern = storage.getPattern();
+            for (var i = 0; i < pattern.size(); i++) {
+                pattern[i] = (pattern[i].toFloat() * 0.9f).toNumber();
+            }
+            storage.setPattern(pattern);
             storage.updateStats("lastDecayTime", nowSec);
         }
     }
