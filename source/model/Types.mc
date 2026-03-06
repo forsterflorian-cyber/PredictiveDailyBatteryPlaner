@@ -35,7 +35,7 @@ module BatteryBudget {
         :battPct as Number,     // 0-100
         :state as State,
         :profile as Profile,
-        :solarW as Number       // solar intensity 0-100 (scaled from 0.0-1.0)
+        :solarW as Number       // solar intensity 0-100
     };
 
     // Segment structure
@@ -73,7 +73,7 @@ module BatteryBudget {
         :hike as Float or Null,
         :swim as Float or Null,
         :sampleCounts as Dictionary<Symbol, Number>,
-        :solarGainRate as Float or Null,  // %/h gained per unit solar intensity (0.0-1.0)
+        :solarGain as Float,              // %/h gained per unit solar intensity (0.0-1.0)
         :recentSolar as Number            // recent average solar intensity (0-100)
     };
     

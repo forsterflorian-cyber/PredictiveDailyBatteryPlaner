@@ -77,8 +77,9 @@ module BatteryBudget {
                 var stats = System.getSystemStats();
                 if (stats has :solarIntensity) {
                     var solar = stats.solarIntensity;
-                    if (solar instanceof Float) {
-                        var v = ((solar as Float) * 100.0f + 0.5f).toNumber();
+                    if (solar instanceof Number) {
+                        var v = (solar as Number).toNumber();
+                        // Some devices return negative values when not charging from solar.
                         if (v < 0) { v = 0; }
                         if (v > 100) { v = 100; }
                         return v;

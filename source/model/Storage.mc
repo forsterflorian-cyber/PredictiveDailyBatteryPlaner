@@ -196,12 +196,12 @@ module BatteryBudget {
                         }
                     }
 
-                    var solarGainRate = null as Float?;
+                    var solarGain = 0.0f;
                     var recentSolar = 0;
                     if (dict.hasKey("sg")) {
                         var v = dict["sg"];
-                        if (v instanceof Float) { solarGainRate = v as Float; }
-                        else if (v instanceof Number) { solarGainRate = (v as Number).toFloat(); }
+                        if (v instanceof Float) { solarGain = v as Float; }
+                        else if (v instanceof Number) { solarGain = (v as Number).toFloat(); }
                     }
                     if (dict.hasKey("rs")) {
                         var v = dict["rs"];
@@ -216,7 +216,7 @@ module BatteryBudget {
                         :hike => hike,
                         :swim => swim,
                         :sampleCounts => sampleCounts,
-                        :solarGainRate => solarGainRate,
+                        :solarGain => solarGain,
                         :recentSolar => recentSolar
                     } as DrainRates;
                 }
@@ -235,7 +235,7 @@ module BatteryBudget {
                 :hike => null,
                 :swim => null,
                 :sampleCounts => {} as Dictionary<Symbol, Number>,
-                :solarGainRate => null,
+                :solarGain => 0.0f,
                 :recentSolar => 0
             } as DrainRates;
         }
@@ -275,9 +275,7 @@ module BatteryBudget {
                     if (_drainRates[:swim] != null) {
                         dict["sw"] = _drainRates[:swim];
                     }
-                    if (_drainRates[:solarGainRate] != null) {
-                        dict["sg"] = _drainRates[:solarGainRate];
-                    }
+                    dict["sg"] = _drainRates[:solarGain];
                     if ((_drainRates[:recentSolar] as Number) > 0) {
                         dict["rs"] = _drainRates[:recentSolar];
                     }
@@ -305,7 +303,8 @@ module BatteryBudget {
                     if (isValidFlatPattern(arr)) {
                         return arr as Array<Number>;
                     }
-                    // Old nested format or wrong size → discard, start fresh
+                    // Old nested format or wrong size -> discard persisted payload now
+                    try { Storage.deleteValue(KEY_PATTERN); } catch (ex2) {}
                 }
             } catch (ex) {
                 // Fall through to default
@@ -684,34 +683,24 @@ module BatteryBudget {
             _batteryHistory = null;
         }
 
-        // Reset only learned EMA values (drain rates + activity pattern) while keeping
-        // statistics such as firstDataDay intact. Use this when the watch hardware changes
-        // or a firmware update significantly alters power consumption.
+        // Reset learned model payloads completely for a clean re-learning cycle.
+        // Required keys: drain rates, pattern, stats, and last snapshot.
         function resetLearning() as Void {
-            _drainRates = getDefaultDrainRates();
-            saveDrainRates();
-
-            _pattern = createEmptyPattern();
-            savePattern();
-
-            // Reset segment counters but keep firstDataDay so "days collected" stays accurate
-            var stats = getStats();
-            stats["totalActivitySegments"] = 0;
-            stats["totalIdleSegments"] = 0;
-            stats["slotsCovered"] = 0;
-            _stats = stats;
-            saveStats();
-
-            _currentSegment = null;
-            _currentSegmentLoaded = true;
-            setCurrentSegment(null);
-
-            // Clear last snapshot so the next background trigger starts fresh instead
-            // of creating a cross-reset segment that would corrupt the new EMA values.
-            _lastSnapshot = null;
-            _lastSnapshotLoaded = true;
+            try { Storage.deleteValue(KEY_DRAIN_RATES); } catch (ex) {}
+            try { Storage.deleteValue(KEY_PATTERN); } catch (ex) {}
+            try { Storage.deleteValue(KEY_STATS); } catch (ex) {}
             try { Storage.deleteValue(KEY_LAST_SNAPSHOT); } catch (ex) {}
 
+            _drainRates = null;
+            _pattern = null;
+            _stats = null;
+            _lastSnapshot = null;
+            _lastSnapshotLoaded = true;
+
+            // Also reset in-memory segment/history state to avoid stale cross-reset learning.
+            _currentSegment = null;
+            _currentSegmentLoaded = true;
+            try { Storage.deleteValue(KEY_CURRENT_SEGMENT); } catch (ex) {}
             _batteryHistory = [] as Array<Number>;
             try { Storage.deleteValue(KEY_BATTERY_HISTORY); } catch (ex) {}
         }

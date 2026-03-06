@@ -47,12 +47,9 @@ module BatteryBudget {
                     if (estimatedGain > 0.0f) {
                         var solarGainSample = estimatedGain / solarFraction;
                         if (solarGainSample > 5.0f) { solarGainSample = 5.0f; } // max ~5 %/h at full sun
-                        var currentGainRate = rates[:solarGainRate];
-                        if (currentGainRate == null) {
-                            rates[:solarGainRate] = solarGainSample;
-                        } else {
-                            rates[:solarGainRate] = updateEMA(currentGainRate as Float, solarGainSample);
-                        }
+                        var currentGain = rates[:solarGain] as Float;
+                        if (currentGain <= 0.0f) { rates[:solarGain] = solarGainSample; }
+                        else { rates[:solarGain] = updateEMA(currentGain, solarGainSample); }
                     }
                 }
             } else if (state == STATE_ACTIVITY) {

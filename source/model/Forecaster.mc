@@ -100,12 +100,12 @@ module BatteryBudget {
             var solarBonusTypical = 0.0f;
             var solarBonusOptimistic = 0.0f;
             var rates = _storage.getDrainRates();
-            var solarGainRate = rates[:solarGainRate];
+            var solarGainRate = rates[:solarGain] as Float;
             var recentSolar = rates[:recentSolar] as Number;
-            if (solarGainRate != null && recentSolar > 10) {
+            if (solarGainRate > 0.0f && recentSolar > 10) {
                 var solarFraction = recentSolar.toFloat() / 100.0f;
                 var solarHoursRemaining = solarMinutesRemaining.toFloat() / 60.0f;
-                var totalSolarGain = (solarGainRate as Float) * solarFraction * solarHoursRemaining;
+                var totalSolarGain = solarGainRate * solarFraction * solarHoursRemaining;
                 solarBonusTypical = totalSolarGain * 0.5f;   // 50% of expected gain (typical)
                 solarBonusOptimistic = totalSolarGain;        // full gain (optimistic)
                 // conservative gets no solar bonus
@@ -154,9 +154,9 @@ module BatteryBudget {
             // Solar compensation: each hour of activity under sun reduces the net drain.
             // We credit only 50 % of the expected gain to stay conservative.
             var solarCompPerHour = 0.0f;
-            if (solarGainRate != null && recentSolar > 20) {
+            if (solarGainRate > 0.0f && recentSolar > 20) {
                 var solarFrac = recentSolar.toFloat() / 100.0f;
-                solarCompPerHour = (solarGainRate as Float) * solarFrac * 0.5f;
+                solarCompPerHour = solarGainRate * solarFrac * 0.5f;
             }
             // Effective extra drain per hour of activity vs idle (never negative)
             var effectiveExtraPerHour = (profileRate - idleRate) - solarCompPerHour;
@@ -325,11 +325,11 @@ module BatteryBudget {
             // Apply solar gain (typical only; simple forecast is conservative by nature)
             var solarBonus = 0.0f;
             var simplRates = _storage.getDrainRates();
-            var simplSolarGainRate = simplRates[:solarGainRate];
+            var simplSolarGainRate = simplRates[:solarGain] as Float;
             var simplRecentSolar = simplRates[:recentSolar] as Number;
-            if (simplSolarGainRate != null && simplRecentSolar > 10) {
+            if (simplSolarGainRate > 0.0f && simplRecentSolar > 10) {
                 var solarFraction = simplRecentSolar.toFloat() / 100.0f;
-                solarBonus = (simplSolarGainRate as Float) * solarFraction * hoursRemaining * 0.5f;
+                solarBonus = simplSolarGainRate * solarFraction * hoursRemaining * 0.5f;
             }
 
             var endBatt = clampBattery(nowBatt.toFloat() - drain + solarBonus);

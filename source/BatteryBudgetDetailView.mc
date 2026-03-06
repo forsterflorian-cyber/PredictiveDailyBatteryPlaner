@@ -202,10 +202,10 @@ class BatteryBudgetDetailView extends WatchUi.View {
     private function buildSolarGainStr() as String {
         try {
             var rates = BatteryBudget.StorageManager.getInstance().getDrainRates();
-            var sgv = rates[:solarGainRate];
+            var sgv = rates[:solarGain] as Float;
             var rsv = rates[:recentSolar] as Number;
-            if (sgv != null && rsv > 10) {
-                var gainRate = sgv as Float;
+            if (sgv > 0.0f && rsv > 10) {
+                var gainRate = sgv;
                 var fraction = rsv.toFloat() / 100.0f;
                 // 24 h estimate, 50 % conservative
                 var gain24h = gainRate * fraction * 24.0f * 0.5f;
