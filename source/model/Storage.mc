@@ -15,19 +15,25 @@ module BatteryBudget {
         private const KEY_CURRENT_SEGMENT = "cs";
         private const KEY_LAST_SNAPSHOT = "ls";
         private const KEY_STATS = "st";
-        
+        // Compact battery history: flat array [tMin1, batt1, tMin2, batt2, ...]
+        // Max BATTERY_HISTORY_MAX_PAIRS pairs = 2*BATTERY_HISTORY_MAX_PAIRS numbers.
+        private const KEY_BATTERY_HISTORY = "bh";
+        private const BATTERY_HISTORY_MAX_PAIRS = 24;
+
         // Singleton instance
         private static var _instance as StorageManager?;
-        
+
         // Cached data
         private var _currentSegment as Segment?;
         private var _currentSegmentLoaded as Boolean;
         private var _drainRates as DrainRates?;
-        private var _pattern as Array<Array<Number>>?;
+        // Flat array: index = weekday * SLOTS_PER_DAY + slotIndex (7×24 = 168 elements)
+        private var _pattern as Array<Number>?;
         private var _lastSnapshot as Snapshot?;
         private var _lastSnapshotLoaded as Boolean;
         private var _stats as Dictionary?;
-        
+        private var _batteryHistory as Array<Number>?;
+
         // Settings cache
         private var _settings as Dictionary?;
         
@@ -76,7 +82,8 @@ module BatteryBudget {
                             :startBatt => arr[2] as Number,
                             :endBatt => arr[3] as Number,
                             :state => arr[4] as State,
-                            :profile => arr[5] as Profile
+                            :profile => arr[5] as Profile,
+                            :solarW => arr.size() >= 7 ? arr[6] as Number : 0
                         } as Segment;
                     }
                 }
@@ -108,7 +115,8 @@ module BatteryBudget {
                         segment[:startBatt],
                         segment[:endBatt],
                         segment[:state],
-                        segment[:profile]
+                        segment[:profile],
+                        segment[:solarW]
                     ]);
                 }
             } catch (ex) {
@@ -130,6 +138,7 @@ module BatteryBudget {
                     var run = null as Float?;
                     var bike = null as Float?;
                     var hike = null as Float?;
+                    var swim = null as Float?;
                     var sampleCounts = {} as Dictionary<Symbol, Number>;
 
                     if (dict.hasKey("i")) {
@@ -157,6 +166,11 @@ module BatteryBudget {
                         if (v instanceof Float) { hike = v as Float; }
                         else if (v instanceof Number) { hike = (v as Number).toFloat(); }
                     }
+                    if (dict.hasKey("sw")) {
+                        var v = dict["sw"];
+                        if (v instanceof Float) { swim = v as Float; }
+                        else if (v instanceof Number) { swim = (v as Number).toFloat(); }
+                    }
 
                     if (dict.hasKey("c")) {
                         var c = dict["c"];
@@ -176,7 +190,22 @@ module BatteryBudget {
 
                             if (rawCounts.hasKey(:hike) && rawCounts[:hike] instanceof Number) { sampleCounts[:hike] = rawCounts[:hike] as Number; }
                             else if (rawCounts.hasKey("hike") && rawCounts["hike"] instanceof Number) { sampleCounts[:hike] = rawCounts["hike"] as Number; }
+
+                            if (rawCounts.hasKey(:swim) && rawCounts[:swim] instanceof Number) { sampleCounts[:swim] = rawCounts[:swim] as Number; }
+                            else if (rawCounts.hasKey("swim") && rawCounts["swim"] instanceof Number) { sampleCounts[:swim] = rawCounts["swim"] as Number; }
                         }
+                    }
+
+                    var solarGainRate = null as Float?;
+                    var recentSolar = 0;
+                    if (dict.hasKey("sg")) {
+                        var v = dict["sg"];
+                        if (v instanceof Float) { solarGainRate = v as Float; }
+                        else if (v instanceof Number) { solarGainRate = (v as Number).toFloat(); }
+                    }
+                    if (dict.hasKey("rs")) {
+                        var v = dict["rs"];
+                        if (v instanceof Number) { recentSolar = v as Number; }
                     }
 
                     return {
@@ -185,7 +214,10 @@ module BatteryBudget {
                         :run => run,
                         :bike => bike,
                         :hike => hike,
-                        :sampleCounts => sampleCounts
+                        :swim => swim,
+                        :sampleCounts => sampleCounts,
+                        :solarGainRate => solarGainRate,
+                        :recentSolar => recentSolar
                     } as DrainRates;
                 }
             } catch (ex) {
@@ -201,7 +233,10 @@ module BatteryBudget {
                 :run => null,
                 :bike => null,
                 :hike => null,
-                :sampleCounts => {} as Dictionary<Symbol, Number>
+                :swim => null,
+                :sampleCounts => {} as Dictionary<Symbol, Number>,
+                :solarGainRate => null,
+                :recentSolar => 0
             } as DrainRates;
         }
         
@@ -234,6 +269,15 @@ module BatteryBudget {
                     if (_drainRates[:hike] != null) {
                         dict["h"] = _drainRates[:hike];
                     }
+                    if (_drainRates[:swim] != null) {
+                        dict["sw"] = _drainRates[:swim];
+                    }
+                    if (_drainRates[:solarGainRate] != null) {
+                        dict["sg"] = _drainRates[:solarGainRate];
+                    }
+                    if ((_drainRates[:recentSolar] as Number) > 0) {
+                        dict["rs"] = _drainRates[:recentSolar];
+                    }
                     Storage.setValue(KEY_DRAIN_RATES, dict);
                 } catch (ex) {
                     // Ignore storage write failures
@@ -245,62 +289,46 @@ module BatteryBudget {
         // Pattern (Activity Minutes Expected)
         //--------------------------------------------------
         
-        private function loadPattern() as Array<Array<Number>> {
+        // Pattern is stored as a flat array of 7*SLOTS_PER_DAY=168 Numbers.
+        // Index: weekday * SLOTS_PER_DAY + slotIndex.
+        // Old format (7×48 nested Array<Array<Number>>) is discarded on first load;
+        // patterns re-learn within days via the background service.
+        private function loadPattern() as Array<Number> {
             try {
                 var data = Storage.getValue(KEY_PATTERN);
-                if (data != null && data instanceof Array) {
+                if (data instanceof Array) {
                     var arr = data as Array;
-                    if (arr.size() == 7) {
-                        // Validate structure
-                        var valid = true;
-                        for (var i = 0; i < 7; i++) {
-                            if (!(arr[i] instanceof Array) || (arr[i] as Array).size() != SLOTS_PER_DAY) {
-                                valid = false;
-                                break;
-                            }
-                        }
-                        if (valid) {
-                            return arr as Array<Array<Number>>;
-                        }
+                    // Accept new flat format: exactly 7*SLOTS_PER_DAY elements of Number
+                    if (arr.size() == 7 * SLOTS_PER_DAY && arr[0] instanceof Number) {
+                        return arr as Array<Number>;
                     }
+                    // Old nested format or wrong size → discard, start fresh
                 }
             } catch (ex) {
                 // Fall through to default
             }
             return createEmptyPattern();
         }
-        
-        private function createEmptyPattern() as Array<Array<Number>> {
-            var pattern = [] as Array<Array<Number>>;
-            for (var day = 0; day < 7; day++) {
-                var daySlots = [] as Array<Number>;
-                for (var slot = 0; slot < SLOTS_PER_DAY; slot++) {
-                    daySlots.add(0);
-                }
-                pattern.add(daySlots);
+
+        private function createEmptyPattern() as Array<Number> {
+            var pattern = [] as Array<Number>;
+            var total = 7 * SLOTS_PER_DAY;
+            for (var i = 0; i < total; i++) {
+                pattern.add(0);
             }
             return pattern;
         }
-        
-        function getPattern() as Array<Array<Number>> {
+
+        function getPattern() as Array<Number> {
             if (_pattern == null) {
                 _pattern = loadPattern();
             }
             return _pattern;
         }
-        
-        function setPattern(pattern as Array<Array<Number>>) as Void {
+
+        function setPattern(pattern as Array<Number>) as Void {
             _pattern = pattern;
             savePattern();
-        }
-        
-        function updatePatternSlot(weekday as Number, slotIndex as Number, activityMinutes as Number) as Void {
-            var pattern = getPattern();
-            if (weekday >= 0 && weekday < 7 && slotIndex >= 0 && slotIndex < SLOTS_PER_DAY) {
-                // Add to existing value (learner will handle decay)
-                pattern[weekday][slotIndex] = pattern[weekday][slotIndex] + activityMinutes;
-            }
-            _pattern = pattern;
         }
         
         private function savePattern() as Void {
@@ -327,7 +355,8 @@ module BatteryBudget {
                             :tMin => arr[0] as Number,
                             :battPct => arr[1] as Number,
                             :state => arr[2] as State,
-                            :profile => arr[3] as Profile
+                            :profile => arr[3] as Profile,
+                            :solarW => arr.size() >= 5 ? arr[4] as Number : 0
                         } as Snapshot;
                     }
                 }
@@ -353,7 +382,8 @@ module BatteryBudget {
                     snapshot[:tMin],
                     snapshot[:battPct],
                     snapshot[:state],
-                    snapshot[:profile]
+                    snapshot[:profile],
+                    snapshot[:solarW]
                 ]);
             } catch (ex) {
                 // Ignore storage write failures
@@ -426,7 +456,10 @@ module BatteryBudget {
                 :conservativeFactor => readFactorProperty("conservativeFactor", 1.2f, 1.0f, 2.0f),
                 :optimisticFactor => readFactorProperty("optimisticFactor", 0.8f, 0.5f, 1.0f),
                 :sampleIntervalMin => clampNumber(readNumberProperty("sampleIntervalMin", 15), 5, 120),
-                :learningWindowDays => clampNumber(readNumberProperty("learningWindowDays", 14), 1, 60)
+                :learningWindowDays => clampNumber(readNumberProperty("learningWindowDays", 14), 1, 60),
+                :targetLevel => clampNumber(readNumberProperty("targetLevel", TARGET_LEVEL), 5, 50),
+                :sleepStartHour => clampNumber(readNumberProperty("sleepStartHour", SLEEP_START_HOUR), 18, 23),
+                :sleepEndHour => clampNumber(readNumberProperty("sleepEndHour", SLEEP_END_HOUR), 0, 10)
             };
         }
 
@@ -500,9 +533,47 @@ module BatteryBudget {
         }
         
         //--------------------------------------------------
+        // Battery History (compact ring buffer)
+        //--------------------------------------------------
+
+        function getBatteryHistory() as Array<Number> {
+            if (_batteryHistory == null) {
+                try {
+                    var data = Storage.getValue(KEY_BATTERY_HISTORY);
+                    if (data instanceof Array) {
+                        var arr = data as Array;
+                        if (arr.size() > 0 && arr[0] instanceof Number) {
+                            _batteryHistory = arr as Array<Number>;
+                            return _batteryHistory;
+                        }
+                    }
+                } catch (ex) {}
+                _batteryHistory = [] as Array<Number>;
+            }
+            return _batteryHistory;
+        }
+
+        // Append a new [tMin, battPct] reading; evicts oldest when buffer is full.
+        function appendBatteryHistory(tMin as Number, battPct as Number) as Void {
+            var history = getBatteryHistory();
+            history.add(tMin);
+            history.add(battPct);
+            // Trim to max capacity (2 values per pair)
+            var maxSize = BATTERY_HISTORY_MAX_PAIRS * 2;
+            while (history.size() > maxSize) {
+                history.remove(history[0]);
+                if (history.size() > 0) { history.remove(history[0]); }
+            }
+            _batteryHistory = history;
+            try {
+                Storage.setValue(KEY_BATTERY_HISTORY, history);
+            } catch (ex) {}
+        }
+
+        //--------------------------------------------------
         // Cleanup old data
         //--------------------------------------------------
-        
+
         function cleanupOldSegments(windowDays as Number) as Void {
             // v1.0.0+ no longer stores segment history (prevents OOM on low-memory devices).
             // Still honor the call site by clearing any legacy data and pruning stale current segment.
@@ -540,6 +611,39 @@ module BatteryBudget {
             _lastSnapshotLoaded = false;
             _stats = null;
             _settings = null;
+            _batteryHistory = null;
+        }
+
+        // Reset only learned EMA values (drain rates + activity pattern) while keeping
+        // statistics such as firstDataDay intact. Use this when the watch hardware changes
+        // or a firmware update significantly alters power consumption.
+        function resetLearning() as Void {
+            _drainRates = getDefaultDrainRates();
+            saveDrainRates();
+
+            _pattern = createEmptyPattern();
+            savePattern();
+
+            // Reset segment counters but keep firstDataDay so "days collected" stays accurate
+            var stats = getStats();
+            stats["totalActivitySegments"] = 0;
+            stats["totalIdleSegments"] = 0;
+            stats["slotsCovered"] = 0;
+            _stats = stats;
+            saveStats();
+
+            _currentSegment = null;
+            _currentSegmentLoaded = true;
+            setCurrentSegment(null);
+
+            // Clear last snapshot so the next background trigger starts fresh instead
+            // of creating a cross-reset segment that would corrupt the new EMA values.
+            _lastSnapshot = null;
+            _lastSnapshotLoaded = true;
+            try { Storage.deleteValue(KEY_LAST_SNAPSHOT); } catch (ex) {}
+
+            _batteryHistory = [] as Array<Number>;
+            try { Storage.deleteValue(KEY_BATTERY_HISTORY); } catch (ex) {}
         }
 
         private function migrateLegacySegmentHistory() as Void {

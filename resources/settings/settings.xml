@@ -22,6 +22,20 @@
         </setting>
     </group>
 
+    <group id="advanced" title="@Strings.SettingsAdvancedGroupTitle" description="@Strings.SettingsAdvancedGroupDescription">
+        <setting propertyKey="@Properties.targetLevel" title="@Strings.TargetLevelLabel" prompt="@Strings.TargetLevelPrompt">
+            <settingConfig type="numeric" min="5" max="50" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.sleepStartHour" title="@Strings.SleepStartHourLabel" prompt="@Strings.SleepStartHourPrompt">
+            <settingConfig type="numeric" min="18" max="23" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.sleepEndHour" title="@Strings.SleepEndHourLabel" prompt="@Strings.SleepEndHourPrompt">
+            <settingConfig type="numeric" min="0" max="10" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+    </group>
+
     <group id="learning" title="@Strings.SettingsLearningGroupTitle" description="@Strings.SettingsLearningGroupDescription">
         <setting propertyKey="@Properties.sampleIntervalMin" title="@Strings.SampleIntervalLabel" prompt="@Strings.SampleIntervalPrompt">
             <settingConfig type="numeric" min="5" max="120" errorMessage="@Strings.SettingNumberError" />

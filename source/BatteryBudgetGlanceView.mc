@@ -10,8 +10,8 @@ import Toybox.Application.Properties;
 (:glance)
 class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
-    private const SLOTS_PER_DAY = 48;
-    private const SLOT_DURATION_MIN = 30;
+    private const SLOTS_PER_DAY = 24;
+    private const SLOT_DURATION_MIN = 60;
 
     private const DEFAULT_END_OF_DAY = "22:00";
     private const DEFAULT_IDLE_RATE = 0.8f; // %/h
@@ -36,6 +36,8 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
     private var _daysCollected as Number = 0;
     private var _endOfDayLabel as String = DEFAULT_END_OF_DAY;
+    private var _budgetMin as Number = 0;
+    private var _abnormalDrain as Boolean = false;
 
     function initialize() {
         GlanceView.initialize();
@@ -74,11 +76,35 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         var line3Color = Graphics.COLOR_WHITE;
         if (_riskLabel != null) { line3Color = _riskColor; }
 
+        // Optional 4th line: abnormal drain warning takes priority, then budget info
+        var line4 = null as String?;
+        var line4Color = Graphics.COLOR_WHITE;
+        if (_abnormalDrain) {
+            line4 = "! High background drain";
+            line4Color = 0xFF8800; // orange
+        } else if (_budgetMin > 0) {
+            if (_budgetMin >= 60) {
+                var bh = _budgetMin / 60;
+                var bm = _budgetMin - bh * 60;
+                line4 = "Budget: " + bh + "h " + bm + "m";
+                line4Color = 0x0055FF; // blue
+            } else {
+                line4 = "Budget: !" + _budgetMin + "m";
+                line4Color = 0xFFAA00; // amber warning
+            }
+        }
+
         var gap = 2;
         var h1 = dc.getFontHeight(fontMain);
         var h2 = dc.getFontHeight(fontMain);
         var h3 = dc.getFontHeight(fontSub);
-        var totalH = h1 + gap + h2 + gap + h3;
+        var h4 = dc.getFontHeight(fontSub);
+        var totalH3 = h1 + gap + h2 + gap + h3;
+        var totalH4 = totalH3 + gap + h4;
+
+        // Show 4th line only when it actually fits (avoids clipping on small screens)
+        var showLine4 = (line4 != null) && (totalH4 <= (height - 4));
+        var totalH = showLine4 ? totalH4 : totalH3;
 
         var y = ((height - totalH) / 2).toNumber();
         if (y < 0) { y = 0; }
@@ -91,6 +117,12 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
         dc.setColor(line3Color, Graphics.COLOR_TRANSPARENT);
         dc.drawText(x, y + h1 + gap + h2 + gap, fontSub, line3, Graphics.TEXT_JUSTIFY_LEFT);
+
+        if (showLine4) {
+            dc.setColor(line4Color, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(x, y + h1 + gap + h2 + gap + h3 + gap, fontSub,
+                line4 as String, Graphics.TEXT_JUSTIFY_LEFT);
+        }
     }
 
     private function updateData() as Void {
@@ -101,6 +133,8 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
         _riskLabel = null;
         _riskColor = Graphics.COLOR_WHITE;
+        _budgetMin = 0;
+        _abnormalDrain = false;
 
         _daysCollected = getDaysCollected();
 
@@ -131,22 +165,31 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
             var conservativeFactor = readFactorProperty("conservativeFactor", DEFAULT_CONSERVATIVE_FACTOR, 1.0f, 2.0f);
             var optimisticFactor = readFactorProperty("optimisticFactor", DEFAULT_OPTIMISTIC_FACTOR, 0.5f, 1.0f);
 
-            var totalDrainTypical = 0.0f;
+            // The current slot may be partially elapsed - only count remaining minutes.
+            // With 60-min slots, remaining = minutes left in the current hour.
+            var remainingInCurrentSlot = SLOT_DURATION_MIN - info.min;
 
-            var patternDay = tryLoadPatternDay(weekday);
+            var totalDrainTypical = 0.0f;
+            var solarMinRemaining = 0;
+
+            var patternFlat = tryLoadPatternFlat();
             for (var slot = currentSlot; slot < endOfDaySlot; slot++) {
+                var slotDurationMin = (slot == currentSlot) ? remainingInCurrentSlot : SLOT_DURATION_MIN;
+                solarMinRemaining += slotDurationMin;
+
                 var expectedActivityMin = 0;
-                if (patternDay != null) {
-                    var v = (patternDay as Array)[slot];
-                    if (v instanceof Number) {
-                        expectedActivityMin = v as Number;
-                    }
+                if (patternFlat != null) {
+                    expectedActivityMin = (patternFlat as Array<Number>)[weekday * SLOTS_PER_DAY + slot];
                 }
 
-                var expectedIdleMin = SLOT_DURATION_MIN - expectedActivityMin;
+                // Scale proportionally when the slot is only partially remaining
+                if (slotDurationMin < SLOT_DURATION_MIN) {
+                    expectedActivityMin = (expectedActivityMin * slotDurationMin / SLOT_DURATION_MIN);
+                }
+                var expectedIdleMin = slotDurationMin - expectedActivityMin;
                 if (expectedIdleMin < 0) {
                     expectedIdleMin = 0;
-                    expectedActivityMin = SLOT_DURATION_MIN;
+                    expectedActivityMin = slotDurationMin;
                 }
 
                 var slotDrain =
@@ -156,9 +199,29 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
                 totalDrainTypical += slotDrain;
             }
 
-            var endTypical = clampBattery(_nowBatt.toFloat() - totalDrainTypical);
+            // Solar gain correction
+            var solarBonusTypical = 0.0f;
+            var solarBonusOpt = 0.0f;
+            var drDict = Storage.getValue("dr");
+            if (drDict != null && drDict instanceof Dictionary) {
+                var d = drDict as Dictionary;
+                var sgv = d.hasKey("sg") ? d["sg"] : null;
+                var rsv = d.hasKey("rs") ? d["rs"] : null;
+                if (sgv != null && rsv != null && rsv instanceof Number) {
+                    var sgRate = (sgv instanceof Float) ? sgv as Float : (sgv as Number).toFloat();
+                    var recentSol = rsv as Number;
+                    if (recentSol > 10) {
+                        var solarFraction = recentSol.toFloat() / 100.0f;
+                        var totalGain = sgRate * solarFraction * solarMinRemaining.toFloat() / 60.0f;
+                        solarBonusTypical = totalGain * 0.5f;
+                        solarBonusOpt = totalGain;
+                    }
+                }
+            }
+
+            var endTypical = clampBattery(_nowBatt.toFloat() - totalDrainTypical + solarBonusTypical);
             var endCons = clampBattery(_nowBatt.toFloat() - (totalDrainTypical * conservativeFactor));
-            var endOpt = clampBattery(_nowBatt.toFloat() - (totalDrainTypical * optimisticFactor));
+            var endOpt = clampBattery(_nowBatt.toFloat() - (totalDrainTypical * optimisticFactor) + solarBonusOpt);
 
             _typicalBatt = roundPct(endTypical);
             _consBatt = roundPct(endCons);
@@ -178,13 +241,31 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
                 _riskLabel = RISK_LABEL_LOW;
                 _riskColor = 0x00FF00;
             }
+
+            // Activity Budget (inline, mirrors Forecaster logic)
+            var targetLevel = readNumberProperty("targetLevel", 15);
+            var extraPerHour = activityRate - idleRate;
+            if (extraPerHour > 0.0f) {
+                var headroom = _nowBatt.toFloat() - totalDrainTypical - targetLevel.toFloat();
+                if (headroom > 0.0f) {
+                    var budgetCalc = (headroom / (extraPerHour / 60.0f)).toNumber();
+                    var maxMin = (endOfDaySlot - currentSlot) * SLOT_DURATION_MIN;
+                    if (budgetCalc > maxMin) { budgetCalc = maxMin; }
+                    _budgetMin = budgetCalc;
+                }
+            }
+
+            // Abnormal drain: idle rate more than 50% above default
+            _abnormalDrain = (idleRate > DEFAULT_IDLE_RATE * 1.5f);
+
         } catch (ex) {
             // Keep fallback values
         }
     }
 
+    // One slot per hour; minute parameter kept for call-site compatibility.
     private function slotIndex(hour as Number, minute as Number) as Number {
-        return (hour * 2 + (minute >= 30 ? 1 : 0));
+        return hour;
     }
 
     private function readStringProperty(key as String, defaultValue as String) as String {
@@ -247,16 +328,14 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         return defaultRate;
     }
 
-    private function tryLoadPatternDay(weekday as Number) as Array? {
+    // Returns the full flat pattern array (7*SLOTS_PER_DAY elements), or null if unavailable/wrong format.
+    private function tryLoadPatternFlat() as Array<Number>? {
         try {
             var data = Storage.getValue("pat");
-            if (data != null && data instanceof Array) {
-                var week = data as Array;
-                if (week.size() == 7 && weekday >= 0 && weekday < 7) {
-                    var day = week[weekday];
-                    if (day != null && day instanceof Array && (day as Array).size() == SLOTS_PER_DAY) {
-                        return day as Array;
-                    }
+            if (data instanceof Array) {
+                var arr = data as Array;
+                if (arr.size() == 7 * SLOTS_PER_DAY && arr[0] instanceof Number) {
+                    return arr as Array<Number>;
                 }
             }
         } catch (ex) {
@@ -289,7 +368,7 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
     private function getBatteryPercent() as Number {
         var stats = System.getSystemStats();
-        if (stats != null && stats has :battery && stats.battery != null) {
+        if (stats has :battery && stats.battery != null) {
             return stats.battery.toNumber();
         }
         return 50;

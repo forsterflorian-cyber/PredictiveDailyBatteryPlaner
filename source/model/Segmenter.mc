@@ -15,29 +15,25 @@ module BatteryBudget {
         function processSnapshotPair(prev as Snapshot, curr as Snapshot) as Void {
             var currentSegment = _storage.getCurrentSegment();
             var shouldCreateNew = false;
-            
+            var isGapBreak = false;  // true when the break is caused by a time gap (not state change)
+
             if (currentSegment == null) {
                 shouldCreateNew = true;
             } else {
-                // Check for state/profile change
+                // Check for state/profile change (also covers charging transitions)
                 if (prev[:state] != curr[:state] || prev[:profile] != curr[:profile]) {
                     shouldCreateNew = true;
                 }
-                
-                // Check for charging transition
-                if (prev[:state] != STATE_CHARGING && curr[:state] == STATE_CHARGING) {
-                    shouldCreateNew = true;
-                }
-                if (prev[:state] == STATE_CHARGING && curr[:state] != STATE_CHARGING) {
-                    shouldCreateNew = true;
-                }
-                
-                // Check for time gap (more than 2 hours) or backward time
+
+                // Check for time gap or backward time.
+                // Gaps larger than MAX_LEARNING_GAP_MIN mean the watch was off / rebooted /
+                // had a clock jump – the interval is invalid for learning.
                 var gap = curr[:tMin] - prev[:tMin];
-                if (gap <= 0 || gap > 120) {
+                if (gap <= 0 || gap > MAX_LEARNING_GAP_MIN) {
                     shouldCreateNew = true;
+                    isGapBreak = true;
                 }
-                
+
                 // Check if segment duration would be too long (> 4 hours)
                 if (!shouldCreateNew) {
                     var potentialDuration = curr[:tMin] - (currentSegment[:startTMin] as Number);
@@ -46,13 +42,20 @@ module BatteryBudget {
                     }
                 }
             }
-            
+
             if (shouldCreateNew) {
                 // Finalize previous segment if exists
                 if (currentSegment != null) {
                     finalizeSegment(currentSegment as Segment, prev);
                 }
-                
+
+                if (isGapBreak) {
+                    // The interval prev→curr spans a large gap and must not be learned from.
+                    // Reset to null; the next pair will start a fresh segment.
+                    _storage.setCurrentSegment(null);
+                    return;
+                }
+
                 // Start new segment (represents the interval prev->curr with curr state)
                 var newSegment = {
                     :startTMin => prev[:tMin],
@@ -60,9 +63,10 @@ module BatteryBudget {
                     :startBatt => prev[:battPct],
                     :endBatt => curr[:battPct],
                     :state => curr[:state],
-                    :profile => curr[:profile]
+                    :profile => curr[:profile],
+                    :solarW => ((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2
                 } as Segment;
-                
+
                 _storage.setCurrentSegment(newSegment);
             } else {
                 // Extend current segment (create new to avoid mutating cached reference)
@@ -73,7 +77,8 @@ module BatteryBudget {
                     :startBatt => seg[:startBatt],
                     :endBatt => curr[:battPct],
                     :state => seg[:state],
-                    :profile => seg[:profile]
+                    :profile => seg[:profile],
+                    :solarW => ((seg[:solarW] as Number) + (curr[:solarW] as Number)) / 2
                 } as Segment;
                 _storage.setCurrentSegment(extendedSegment);
             }
@@ -119,6 +124,13 @@ module BatteryBudget {
             return true;
         }
         
+        // Returns true when the time gap between two consecutive snapshots is small enough
+        // that the interval can be trusted for drain-rate and pattern learning.
+        static function isGapValid(prevTMin as Number, currTMin as Number) as Boolean {
+            var gap = currTMin - prevTMin;
+            return gap > 0 && gap <= MAX_LEARNING_GAP_MIN;
+        }
+
         // Calculate drain rate for a segment (%/hour)
         static function calculateDrainRate(segment as Segment) as Float {
             var durationMin = segment[:endTMin] - segment[:startTMin];

@@ -1,7 +1,6 @@
 import Toybox.Lang;
 import Toybox.System;
 import Toybox.Activity;
-import Toybox.ActivityMonitor;
 
 (:background)
 module BatteryBudget {
@@ -20,14 +19,16 @@ module BatteryBudget {
             var battPct = getBatteryPercent();
             var state = detectCurrentState();
             var profile = detectCurrentProfile(state);
-            
+            var solarW = getSolarIntensity();
+
             var snapshot = {
                 :tMin => tMin,
                 :battPct => battPct,
                 :state => state,
-                :profile => profile
+                :profile => profile,
+                :solarW => solarW
             } as Snapshot;
-            
+
             return snapshot;
         }
         
@@ -35,18 +36,22 @@ module BatteryBudget {
         function logSnapshot() as Void {
             var currentSnapshot = takeSnapshot();
             var lastSnapshot = _storage.getLastSnapshot();
-            
+
             // Detect charging by battery increase
             if (lastSnapshot != null) {
                 if (currentSnapshot[:battPct] > lastSnapshot[:battPct]) {
-                    // Battery increased - charging detected
                     currentSnapshot[:state] = STATE_CHARGING;
                 }
             }
-            
+
             _storage.setLastSnapshot(currentSnapshot);
             _storage.recordFirstDataIfNeeded();
-            
+
+            // Append to compact history ring buffer (used for trend page)
+            _storage.appendBatteryHistory(
+                currentSnapshot[:tMin] as Number,
+                currentSnapshot[:battPct] as Number);
+
             // Trigger segmenter if we have a previous snapshot
             if (lastSnapshot != null) {
                 var segmenter = new Segmenter();
@@ -57,13 +62,32 @@ module BatteryBudget {
         // Get current battery percentage
         private function getBatteryPercent() as Number {
             var stats = System.getSystemStats();
-            if (stats != null && stats has :battery) {
+            if (stats has :battery) {
                 var batt = stats.battery;
                 if (batt != null) {
                     return batt.toNumber();
                 }
             }
             return 50; // Fallback
+        }
+
+        // Get solar intensity scaled to 0-100; returns 0 on unsupported devices
+        private function getSolarIntensity() as Number {
+            try {
+                var stats = System.getSystemStats();
+                if (stats has :solarIntensity) {
+                    var solar = stats.solarIntensity;
+                    if (solar instanceof Float) {
+                        var v = ((solar as Float) * 100.0f + 0.5f).toNumber();
+                        if (v < 0) { v = 0; }
+                        if (v > 100) { v = 100; }
+                        return v;
+                    }
+                }
+            } catch (ex) {
+                // solarIntensity not available on this device
+            }
+            return 0;
         }
         
         // Detect current state based on available APIs
@@ -90,7 +114,7 @@ module BatteryBudget {
         private function isCharging() as Boolean {
             try {
                 var stats = System.getSystemStats();
-                if (stats != null && stats has :charging) {
+                if (stats has :charging) {
                     return stats.charging;
                 }
             } catch (ex) {
@@ -112,17 +136,6 @@ module BatteryBudget {
                 }
             } catch (ex) {
                 // API not available or not in activity
-            }
-            
-            try {
-                // Method 2: Check ActivityMonitor for recent activity
-                var actInfo = ActivityMonitor.getInfo();
-                if (actInfo != null && actInfo has :moveBarLevel) {
-                    // High move bar could indicate activity, but not reliable
-                    // This is a weak signal, so we don't rely on it alone
-                }
-            } catch (ex) {
-                // API not available
             }
             
             return false;
@@ -177,6 +190,27 @@ module BatteryBudget {
             return (hour >= 23 || hour < 6);
         }
         
+        // Return an adaptive sample interval (minutes) based on the current state.
+        // Active/charging sessions get shorter intervals for accurate drain curves;
+        // idle/sleep get longer intervals to reduce background power consumption.
+        function getAdaptiveInterval(state as State) as Number {
+            var settings = _storage.getSettings();
+            var base = settings[:sampleIntervalMin];
+            var baseMin = (base instanceof Number) ? base as Number : 15;
+
+            if (state == STATE_ACTIVITY || state == STATE_CHARGING) {
+                // High-change states: sample at half the base interval, min 5 min
+                var fast = baseMin / 2;
+                return fast < 5 ? 5 : fast;
+            }
+            if (state == STATE_IDLE || state == STATE_SLEEP) {
+                // Stable state: stretch to 1.5× base, max 30 min (safety cap)
+                var slow = (baseMin * 3) / 2;
+                return slow > 30 ? 30 : slow;
+            }
+            return baseMin;
+        }
+
         // Get minimum interval between snapshots (minutes)
         function getMinSnapshotInterval() as Number {
             var settings = _storage.getSettings();

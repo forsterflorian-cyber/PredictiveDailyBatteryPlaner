@@ -3,6 +3,18 @@
     <iq:application id="21640c05-5430-4209-a54d-65fc002764ad" type="widget" entry="BatteryBudgetApp" launcherIcon="@Drawables.LauncherIcon" name="@Strings.AppName" version="1.0.0" minSdkVersion="3.3.0">
         <iq:products>
             <!-- Forerunner -->
+            <!-- Fenix / Epix -->
+            <!-- Venu / Venu Sq / Vivoactive -->
+            <iq:product id="epix2"/>
+            <iq:product id="epix2pro42mm"/>
+            <iq:product id="epix2pro47mm"/>
+            <iq:product id="epix2pro51mm"/>
+            <iq:product id="fenix7"/>
+            <iq:product id="fenix7pro"/>
+            <iq:product id="fenix7s"/>
+            <iq:product id="fenix7spro"/>
+            <iq:product id="fenix7x"/>
+            <iq:product id="fenix7xpro"/>
             <iq:product id="fr255"/>
             <iq:product id="fr255m"/>
             <iq:product id="fr255s"/>
@@ -11,21 +23,9 @@
             <iq:product id="fr265s"/>
             <iq:product id="fr955"/>
             <iq:product id="fr965"/>
-            <!-- Fenix / Epix -->
-            <iq:product id="fenix7"/>
-            <iq:product id="fenix7s"/>
-            <iq:product id="fenix7x"/>
-            <iq:product id="fenix7pro"/>
-            <iq:product id="fenix7spro"/>
-            <iq:product id="fenix7xpro"/>
-            <iq:product id="epix2"/>
-            <iq:product id="epix2pro42mm"/>
-            <iq:product id="epix2pro47mm"/>
-            <iq:product id="epix2pro51mm"/>
-            <!-- Venu / Venu Sq / Vivoactive -->
             <iq:product id="venu2"/>
-            <iq:product id="venu2s"/>
             <iq:product id="venu2plus"/>
+            <iq:product id="venu2s"/>
             <iq:product id="venu3"/>
             <iq:product id="venu3s"/>
             <iq:product id="venusq2"/>
@@ -34,8 +34,8 @@
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="Background"/>
+            <iq:uses-permission id="UserProfile"/>
         </iq:permissions>
-
         <iq:languages>
             <iq:language>deu</iq:language>
             <iq:language>eng</iq:language>

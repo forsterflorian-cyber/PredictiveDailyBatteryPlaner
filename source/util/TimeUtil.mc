@@ -1,4 +1,5 @@
 import Toybox.Lang;
+import Toybox.System;
 import Toybox.Time;
 import Toybox.Time.Gregorian;
 
@@ -22,9 +23,10 @@ module BatteryBudget {
             return Gregorian.info(Time.now(), Time.FORMAT_SHORT);
         }
         
-        // Get slot index (0-47) from hour and minute
+        // Get slot index (0-23) from hour — one slot per hour.
+        // The minute parameter is kept for call-site compatibility but is ignored.
         static function getSlotIndex(hour as Number, minute as Number) as Number {
-            return (hour * 2 + (minute >= 30 ? 1 : 0));
+            return hour;
         }
         
         // Get current slot index
@@ -120,13 +122,27 @@ module BatteryBudget {
             return slot;
         }
         
-        // Format time from slot index (e.g., slot 10 -> "05:00")
+        // Format hour:minute respecting the device's 12h/24h preference.
+        // Returns "HH:MM" (24h) or "H:MMam/pm" (12h).
+        static function formatTime(hour as Number, minute as Number) as String {
+            var mStr = minute < 10 ? "0" + minute.toString() : minute.toString();
+            try {
+                var devSettings = System.getDeviceSettings();
+                if ((devSettings has :is24Hour) && !devSettings.is24Hour) {
+                    var h12 = hour % 12;
+                    if (h12 == 0) { h12 = 12; }
+                    var suffix = hour < 12 ? "am" : "pm";
+                    return h12.toString() + ":" + mStr + suffix;
+                }
+            } catch (ex) {}
+            // 24-hour default
+            var hStr = hour < 10 ? "0" + hour.toString() : hour.toString();
+            return hStr + ":" + mStr;
+        }
+
+        // Format time from slot index (e.g., slot 10 -> "10:00" or "10:00am")
         static function formatSlotTime(slotIndex as Number) as String {
-            var hour = slotIndex / 2;
-            var minute = (slotIndex % 2) * 30;
-            var hourStr = hour < 10 ? "0" + hour.toString() : hour.toString();
-            var minStr = minute < 10 ? "0" + minute.toString() : minute.toString();
-            return hourStr + ":" + minStr;
+            return formatTime(slotIndex, 0);
         }
     }
 }

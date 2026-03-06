@@ -37,6 +37,18 @@
     <string id="ResetDataLabel" scope="settings">Reset learned data</string>
     <string id="ResetDataPrompt" scope="settings">Turn on to clear all learned history on the watch</string>
 
+    <string id="SettingsAdvancedGroupTitle" scope="settings">Advanced</string>
+    <string id="SettingsAdvancedGroupDescription" scope="settings">Sleep window and activity budget target</string>
+
+    <string id="TargetLevelLabel" scope="settings">Target Battery Level (%)</string>
+    <string id="TargetLevelPrompt" scope="settings">Minimum battery % to keep at end of day (5-50)</string>
+
+    <string id="SleepStartHourLabel" scope="settings">Sleep Start Hour</string>
+    <string id="SleepStartHourPrompt" scope="settings">Hour when sleep window begins (18-23)</string>
+
+    <string id="SleepEndHourLabel" scope="settings">Sleep End Hour</string>
+    <string id="SleepEndHourPrompt" scope="settings">Hour when sleep window ends (0-10)</string>
+
 
     <!-- Runtime UI strings (foreground widget) -->
     <string id="Tonight">Tonight</string>
@@ -72,4 +84,8 @@
     <string id="NextActivity">Next Typical Activity</string>
     <string id="NoActivityPredicted">No activity predicted</string>
     <string id="MinTypical">min typical</string>
+
+    <!-- History / Trend page -->
+    <string id="HistoryTitle">Battery History</string>
+    <string id="SolarGain24h">Solar 24h</string>
 </strings>

@@ -37,6 +37,18 @@
     <string id="ResetDataLabel" scope="settings">Gelernte Daten löschen</string>
     <string id="ResetDataPrompt" scope="settings">Aktivieren, um alle Lern-Daten auf der Uhr zu löschen</string>
 
+    <string id="SettingsAdvancedGroupTitle" scope="settings">Erweitert</string>
+    <string id="SettingsAdvancedGroupDescription" scope="settings">Schlaffenster und Akku-Zielwert</string>
+
+    <string id="TargetLevelLabel" scope="settings">Ziel-Akkustand (%)</string>
+    <string id="TargetLevelPrompt" scope="settings">Mindest-Akku % am Tagesende (5-50)</string>
+
+    <string id="SleepStartHourLabel" scope="settings">Schlafbeginn (Stunde)</string>
+    <string id="SleepStartHourPrompt" scope="settings">Stunde, ab der das Schlaffenster beginnt (18-23)</string>
+
+    <string id="SleepEndHourLabel" scope="settings">Schlafende (Stunde)</string>
+    <string id="SleepEndHourPrompt" scope="settings">Stunde, bis der Schlaf endet (0-10)</string>
+
 
     <!-- Runtime UI strings (foreground widget) -->
     <string id="Tonight">Heute</string>
@@ -72,4 +84,8 @@
     <string id="NextActivity">Nächste Aktivität</string>
     <string id="NoActivityPredicted">Keine Aktivität erwartet</string>
     <string id="MinTypical">Min typisch</string>
+
+    <!-- History / Trend page -->
+    <string id="HistoryTitle">Akku-Verlauf</string>
+    <string id="SolarGain24h">Solar 24h</string>
 </strings>

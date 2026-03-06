@@ -9,7 +9,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
     private var _forecast as BatteryBudget.ForecastResult?;
     private var _lastForecastUpdateSec as Number = 0;
     private var _currentPage as Number = 0;
-    private const MAX_PAGES = 3;
+    private const MAX_PAGES = 4;
     private const FORECAST_REFRESH_INTERVAL_SEC = 60;
 
     private const PAGE_DOT_RADIUS = 4;
@@ -74,14 +74,18 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var height = dc.getHeight();
         
         // Draw based on current page
+        // 0=Forecast  1=History/Trend  2=Rates  3=Activity
         switch (_currentPage) {
             case 0:
                 drawMainForecast(dc, width, height);
                 break;
             case 1:
-                drawLearnedRates(dc, width, height);
+                drawHistoryTrend(dc, width, height);
                 break;
             case 2:
+                drawLearnedRates(dc, width, height);
+                break;
+            case 3:
                 drawActivityWindow(dc, width, height);
                 break;
         }
@@ -90,7 +94,125 @@ class BatteryBudgetDetailView extends WatchUi.View {
         drawPageIndicator(dc, width, height);
     }
     
-    // Page 1: Main forecast
+    // Page 1: History / Battery trend
+    // Draws a line chart of the last 24 battery readings and a solar-gain estimate.
+    private function drawHistoryTrend(dc as Dc, width as Number, height as Number) as Void {
+        var centerX = width / 2;
+        var topPad = getTopPadding(height);
+        var contentBottom = getContentBottom(height);
+
+        var titleFont = Graphics.FONT_TINY;
+        var noteFont  = Graphics.FONT_XTINY;
+        var titleH = dc.getFontHeight(titleFont);
+        var noteH  = dc.getFontHeight(noteFont);
+
+        // Title
+        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(centerX, topPad, titleFont, tr(Rez.Strings.HistoryTitle), Graphics.TEXT_JUSTIFY_CENTER);
+
+        // Solar-gain estimate (bottom anchor, above page dots)
+        var solarStr = buildSolarGainStr();
+        var noteY = contentBottom - noteH;
+        if (noteY < topPad) { noteY = topPad; }
+        dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(centerX, noteY, noteFont, solarStr, Graphics.TEXT_JUSTIFY_CENTER);
+
+        // Graph area between title and solar note
+        var graphTop    = topPad + titleH + 6;
+        var graphBottom = noteY - 6;
+        var graphLeft   = 10;
+        var graphRight  = width - 10;
+        var graphW      = graphRight - graphLeft;
+        var graphH      = graphBottom - graphTop;
+        if (graphH < 20 || graphW < 20) { return; }
+
+        // Load history: flat array [tMin1, batt1, tMin2, batt2, ...]
+        var history = BatteryBudget.StorageManager.getInstance().getBatteryHistory();
+        var count = history.size() / 2; // number of data points
+
+        if (count < 2) {
+            // Not enough data yet
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(centerX, graphTop + graphH / 2, Graphics.FONT_SMALL,
+                tr(Rez.Strings.NoData),
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+
+        // Find time and battery range
+        var tFirst = history[0] as Number;
+        var tLast  = history[(count - 1) * 2] as Number;
+        var tSpan  = tLast - tFirst;
+        if (tSpan <= 0) { tSpan = 1; }
+
+        // Fixed battery display range (always 0-100 %; makes curves comparable)
+        var battMin = 0;
+        var battMax = 100;
+        var battSpan = battMax - battMin;
+
+        // Reference grid lines at 25 % / 50 % / 75 %
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+        var refLevels = [25, 50, 75];
+        for (var i = 0; i < refLevels.size(); i++) {
+            var gy = graphBottom - ((refLevels[i] - battMin) * graphH / battSpan);
+            dc.drawLine(graphLeft, gy, graphRight, gy);
+        }
+
+        // Map a data-point index to screen coordinates
+        // Returns [x, y] stored in a small 2-element array to avoid object allocation
+        var prevX = -1;
+        var prevY = -1;
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+
+        for (var i = 0; i < count; i++) {
+            var tMin  = history[i * 2]     as Number;
+            var batt  = history[i * 2 + 1] as Number;
+
+            var px = graphLeft + ((tMin - tFirst) * graphW / tSpan);
+            var py = graphBottom - ((batt - battMin) * graphH / battSpan);
+
+            // Clamp to graph area
+            if (px < graphLeft)   { px = graphLeft; }
+            if (px > graphRight)  { px = graphRight; }
+            if (py < graphTop)    { py = graphTop; }
+            if (py > graphBottom) { py = graphBottom; }
+
+            if (prevX >= 0) {
+                dc.drawLine(prevX, prevY, px, py);
+            } else {
+                dc.drawPoint(px, py); // first point
+            }
+            prevX = px;
+            prevY = py;
+        }
+
+        // Y-axis labels at 0 % and 100 %
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(graphLeft, graphBottom - noteH, noteFont, "0%", Graphics.TEXT_JUSTIFY_LEFT);
+        dc.drawText(graphLeft, graphTop, noteFont, "100%", Graphics.TEXT_JUSTIFY_LEFT);
+    }
+
+    // Build the solar-gain estimate string for the last 24 h.
+    private function buildSolarGainStr() as String {
+        try {
+            var rates = BatteryBudget.StorageManager.getInstance().getDrainRates();
+            var sgv = rates[:solarGainRate];
+            var rsv = rates[:recentSolar] as Number;
+            if (sgv != null && rsv > 10) {
+                var gainRate = sgv as Float;
+                var fraction = rsv.toFloat() / 100.0f;
+                // 24 h estimate, 50 % conservative
+                var gain24h = gainRate * fraction * 24.0f * 0.5f;
+                var intPart  = gain24h.toNumber();
+                var decPart  = ((gain24h - intPart.toFloat()) * 10 + 0.5f).toNumber().abs();
+                if (decPart > 9) { decPart = 9; }
+                return tr(Rez.Strings.SolarGain24h) + ": +" + intPart.toString() + "." + decPart.toString() + "%";
+            }
+        } catch (ex) {}
+        return tr(Rez.Strings.SolarGain24h) + ": --";
+    }
+
+    // Page 0: Main forecast
     private function drawMainForecast(dc as Dc, width as Number, height as Number) as Void {
         var centerX = width / 2;
         var nowBatt = _forecaster.getCurrentBattery();
@@ -260,6 +382,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var optimistic = forecast[:optimistic] as Number;
         var risk = forecast[:risk] as BatteryBudget.RiskLevel;
         var confidence = forecast[:confidence] as Float;
+        var budgetMin = forecast[:remainingActivityMinutes] as Number;
 
         // "Tonight" label
         var endTimeLabel = "22:00";
@@ -273,6 +396,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var labelFont = Graphics.FONT_TINY;
         var rangeFont = Graphics.FONT_SMALL;
         var riskFont = Graphics.FONT_MEDIUM;
+        var budgetFont = Graphics.FONT_TINY;
         var confFont = Graphics.FONT_XTINY;
 
         var numH = dc.getFontHeight(numFont);
@@ -280,6 +404,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var labelH = dc.getFontHeight(labelFont);
         var rangeH = dc.getFontHeight(rangeFont);
         var riskH = dc.getFontHeight(riskFont);
+        var budgetH = dc.getFontHeight(budgetFont);
         var confH = dc.getFontHeight(confFont);
 
         // Confidence anchored just above the page dots
@@ -295,7 +420,11 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var gapSm = 2;
         var gapMd = 6;
 
+        // Include budget line when there is meaningful budget (>0 min)
+        var showBudget = budgetMin > 0;
         var stackH = numH + gapSm + labelH + gapMd + rangeH + gapMd + riskH;
+        if (showBudget) { stackH += gapMd + budgetH; }
+
         var y = stackTop + ((stackBottom - stackTop - stackH) / 2).toNumber();
         if (y < stackTop) { y = stackTop; }
 
@@ -334,6 +463,21 @@ class BatteryBudgetDetailView extends WatchUi.View {
         dc.setColor(riskColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, y, riskFont,
             Lang.format("$1$: $2$", [tr(Rez.Strings.Risk), riskStr]), Graphics.TEXT_JUSTIFY_CENTER);
+        y += riskH + gapMd;
+
+        // Activity budget line: "Budget: Xh Ym" or "Budget: Ym"
+        if (showBudget) {
+            var budgetStr;
+            if (budgetMin >= 60) {
+                var bh = budgetMin / 60;
+                var bm = budgetMin - bh * 60;
+                budgetStr = Lang.format("Budget: $1$h $2$m", [bh, bm]);
+            } else {
+                budgetStr = Lang.format("Budget: $1$m", [budgetMin]);
+            }
+            dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(centerX, y, budgetFont, budgetStr, Graphics.TEXT_JUSTIFY_CENTER);
+        }
 
         // Confidence (bottom)
         dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
