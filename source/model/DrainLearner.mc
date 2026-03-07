@@ -9,6 +9,13 @@ module BatteryBudget {
         
         // EMA smoothing factor
         private const ALPHA = 0.2f;
+
+        // Per-state sanity caps (%/h). Values above these are implausible short-term
+        // spikes (sensor glitch, app startup burst, etc.) and are clamped — not
+        // dropped — so they still nudge the EMA slightly without dominating it.
+        private const SANITY_MAX_IDLE     = 5.0f;   // >5 %/h idle = spike
+        private const SANITY_MAX_ACTIVITY = 15.0f;  // >15 %/h activity = spike
+        private const SANITY_MAX_SLEEP    = 3.0f;   // sleep should stay very low
         
         function initialize() {
             _storage = StorageManager.getInstance();
@@ -29,20 +36,28 @@ module BatteryBudget {
 
             // Calculate drain rate
             var rate = Segmenter.calculateDrainRate(segment);
-            
-            // Sanity check rate
+
+            // Hard outlier guard: completely implausible values (e.g. negative without
+            // charging, or runaway > MAX_RATE) are discarded before anything else.
             if (rate < MIN_RATE || rate > MAX_RATE) {
                 return; // Outlier, skip
             }
-            
+
+            // Determine state early so the sanity guard can apply per-state caps.
+            var state = segment[:state] as State;
+
+            // Sanity Guard: cap implausible spikes to a state-specific maximum.
+            // Capping (instead of dropping) lets the EMA absorb a small nudge from
+            // the event without being dominated by a momentary system burst.
+            rate = applySanityGuard(rate, state);
+
             var rates = _storage.getDrainRates();
             var counts = rates[:sampleCounts];
             if (counts == null) {
                 counts = {} as Dictionary<Symbol, Number>;
             }
-            
+
             // Update appropriate rate based on state
-            var state = segment[:state] as State;
             
             if (state == STATE_IDLE) {
                 rates[:idle] = updateEMA(rates[:idle] as Float, rate);
@@ -104,7 +119,23 @@ module BatteryBudget {
             }
             return rate;
         }
-        
+
+        // Cap a drain rate to the state-specific plausible maximum.
+        // Values that exceed the cap are clamped rather than dropped so that genuine
+        // high-drain moments still contribute a dampened signal to the EMA.
+        private function applySanityGuard(rate as Float, state as State) as Float {
+            var cap = SANITY_MAX_ACTIVITY;
+            if (state == STATE_IDLE) {
+                cap = SANITY_MAX_IDLE;
+            } else if (state == STATE_SLEEP) {
+                cap = SANITY_MAX_SLEEP;
+            }
+            if (rate > cap) {
+                return cap;
+            }
+            return rate;
+        }
+
         // Update profile-specific rate
         private function updateProfileRate(rates as DrainRates, counts as Dictionary<Symbol, Number>,
                                            profile as Profile, rate as Float) as Void {
