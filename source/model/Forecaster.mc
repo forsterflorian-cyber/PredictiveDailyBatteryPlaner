@@ -12,11 +12,16 @@ module BatteryBudget {
         private var _drainLearner as DrainLearner;
         private var _patternLearner as PatternLearner;
         private const MIN_VALID_RATE_SAMPLES = 3;
-        
+        // Gap threshold for backfilling on startup (minutes)
+        private const BACKFILL_THRESHOLD_MIN = 30;
+        // Maximum gap to backfill; beyond 24 h the data is too stale to be reliable
+        private const BACKFILL_MAX_GAP_MIN = 1440;
+
         function initialize() {
             _storage = StorageManager.getInstance();
             _drainLearner = new DrainLearner();
             _patternLearner = new PatternLearner();
+            _backfillGapIfNeeded();
         }
         
         // Generate forecast for end of day
@@ -251,7 +256,112 @@ module BatteryBudget {
             }
             return 50;
         }
-        
+
+        // Backfill the learning gap that arises after a watch restart or system update.
+        // If the time since the last snapshot exceeds BACKFILL_THRESHOLD_MIN, synthetic
+        // segments are constructed from PatternLearner historical averages and fed into
+        // DrainLearner so that learned drain rates reflect the missed period.
+        // PatternLearner itself is NOT updated — we must not reinforce the pattern with
+        // synthetic data.
+        private function _backfillGapIfNeeded() as Void {
+            var lastSnap = _storage.getLastSnapshot();
+            if (lastSnap == null) {
+                return;
+            }
+
+            var nowTMin  = TimeUtil.nowEpochMinutes();
+            var lastTMin = lastSnap[:tMin] as Number;
+            var gapMin   = nowTMin - lastTMin;
+
+            // Only backfill meaningful, believable gaps
+            if (gapMin <= BACKFILL_THRESHOLD_MIN || gapMin > BACKFILL_MAX_GAP_MIN) {
+                return;
+            }
+
+            var lastBatt = lastSnap[:battPct] as Number;
+            var nowBatt  = getBatteryPercent();
+
+            // Battery rose → charging session; skip (isPostCharge logic handles this)
+            if (lastBatt <= nowBatt) {
+                return;
+            }
+
+            var totalBattDelta = (lastBatt - nowBatt).toFloat();
+
+            // Walk through each slot in the gap and sum up PatternLearner expectations.
+            // We advance in SLOT_DURATION_MIN (60-min) steps; at most 24 iterations.
+            var totalExpectedIdleMin     = 0;
+            var totalExpectedActivityMin = 0;
+
+            var curMin = lastTMin;
+            while (curMin < nowTMin) {
+                var weekday = TimeUtil.getWeekdayFromEpochMin(curMin);
+                var slot    = TimeUtil.getSlotFromEpochMin(curMin);
+
+                var nextMin = curMin + SLOT_DURATION_MIN;
+                if (nextMin > nowTMin) { nextMin = nowTMin; }
+                var slotActualMin = nextMin - curMin;
+
+                // Prorate expected activity to the actual minutes we spent in this slot
+                var expectedActMin = _patternLearner.getExpectedActivityMinutes(weekday, slot)
+                                     * slotActualMin / SLOT_DURATION_MIN;
+                if (expectedActMin > slotActualMin) { expectedActMin = slotActualMin; }
+                if (expectedActMin < 0)             { expectedActMin = 0; }
+
+                totalExpectedActivityMin += expectedActMin;
+                totalExpectedIdleMin     += (slotActualMin - expectedActMin);
+
+                curMin = nextMin;
+            }
+
+            // Estimate how the battery delta splits between idle and activity time,
+            // weighted by their expected drain contributions.
+            var idleRate = getSafeIdleRate();
+            var actRate  = getSafeActivityRate();
+
+            var expectedIdleDrain = idleRate * totalExpectedIdleMin.toFloat() / 60.0f;
+            var expectedActDrain  = actRate  * totalExpectedActivityMin.toFloat() / 60.0f;
+            var expectedTotal     = expectedIdleDrain + expectedActDrain;
+
+            // Feed synthetic idle segment into DrainLearner
+            if (totalExpectedIdleMin > 0) {
+                var idleDelta = (expectedTotal > 0.0f)
+                    ? totalBattDelta * (expectedIdleDrain / expectedTotal)
+                    : totalBattDelta;
+                var idleEndBatt = lastBatt - idleDelta.toNumber();
+                if (idleEndBatt < 0)       { idleEndBatt = 0; }
+                if (idleEndBatt < lastBatt) {
+                    _drainLearner.learnFromSegment({
+                        :startTMin => lastTMin,
+                        :endTMin   => lastTMin + totalExpectedIdleMin,
+                        :startBatt => lastBatt,
+                        :endBatt   => idleEndBatt,
+                        :state     => STATE_IDLE,
+                        :profile   => PROFILE_GENERIC,
+                        :solarW    => 0
+                    } as Segment);
+                }
+            }
+
+            // Feed synthetic activity segment only when meaningful activity is expected
+            if (totalExpectedActivityMin >= 10 && expectedTotal > 0.0f) {
+                var actDelta   = totalBattDelta * (expectedActDrain / expectedTotal);
+                var actEndBatt = lastBatt - actDelta.toNumber();
+                if (actEndBatt < 0)        { actEndBatt = 0; }
+                if (actEndBatt < lastBatt) {
+                    _drainLearner.learnFromSegment({
+                        :startTMin => lastTMin,
+                        :endTMin   => lastTMin + totalExpectedActivityMin,
+                        :startBatt => lastBatt,
+                        :endBatt   => actEndBatt,
+                        :state     => STATE_ACTIVITY,
+                        :profile   => PROFILE_GENERIC,
+                        :solarW    => 0
+                    } as Segment);
+                }
+            }
+        }
+
         // Calculate activity budget: how many minutes of activity the user can still do
         // before the typical end-of-day battery would fall below targetLevel.
         // effectiveExtraPerHour = (profileRate - idleRate) already adjusted for solar gain.
