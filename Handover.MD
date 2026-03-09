@@ -1,29 +1,29 @@
-Handover: BatteryPlaner (Alpha-Abschluss)
-Status Quo
-Die App ist mathematisch verifiziert und UI-seitig auf ein responsives System umgestellt. Die Kernlogik ist durch 48 Unit-Tests (alle PASS) abgesichert.
+==============================================================================
+HANDOVER: BatteryPlaner (Alpha-Abschluss)
+==============================================================================
 
-Key Features & Implementierungen
-Relative Design: Alle UI-Elemente in BatteryBudgetDetailView.mc nutzen dynamische Faktoren von dc.getWidth() und dc.getHeight(). Zentraler Anker ist centerY.
+### STATUS QUO
+- 48 Unit Tests: PASS (100%)
+- Build: FR955 und Vivoactive4 erfolgreich
+- Release-Ready fuer Alpha-Phase
 
-Hybrid Detection: Erkennung von HR-Broadcast-Events durch Kombination von Puls-Signal und tatsächlichem Akku-Drain-Spike.
+### KEY FEATURES & ARCHITEKTUR
+- Relative Design: Koordinaten basieren auf H/W-Faktoren.
+- Hybrid Detection: HR-Signal + Drain-Spike Validierung.
+- Forecaster: Dual-Modell mit EMA-Glaettung.
+- Dictionary-Params: UI-Renderer nutzen Dictionaries, um das 9-Argumente-
+  Limit von Monkey C (besonders auf Vivoactive4) zu umgehen.
 
-Forecaster-Modell: Dual-Drain-Modell (Native vs. Broadcast) mit Wochenbudgets und EMA-Glättung.
+### TEST SUITE (StressTests.mc)
+- Chaos-Fall: 5% Akku + Budget-Ueberzug + 120min Event = STABIL.
+- Persistence: Pending-Events ueberleben Neustart.
 
-Safety & Resilience: Schutz gegen Division-by-Zero (baseDrain == 0) und Persistenz von Pending-Events über App-Crashes/Restarts hinweg.
+### KNOWN ISSUES / WARNINGS
+- Icon Scaling: 100x100 Icon wird auf Vivoactive4 (35x35) herunterskaliert.
+- Glance Support: :glance Annotationen werden auf Legacy-Hardware ignoriert.
 
-Test-Abdeckung (StressTests.mc)
-Chaos-Szenario: 5% Akku + überzogenes Budget + neues Event wurde erfolgreich validiert.
-
-Wochenwechsel: Automatischer Reset der Budgets und Normalisierung der Keys ist stabil.
-
-Nächste Schritte (Backlog)
-Beta-Release: Erster Live-Test am Handgelenk zur Verifikation der gelernten EMA-Werte.
-
-Confidence Metric: Optionale Visualisierung der Datenreife (Lernphase vs. stabile Prognose).
-
-Vibration-Alerts: Haptisches Feedback bei kritischer Reichweite unter 2.0 Tagen beim App-Start.
-
-Technische Notizen
-Die produktiven Hooks in Forecaster.mc und BroadcastDetector.mc müssen bei Refactorings erhalten bleiben, um die Testbarkeit nicht zu brechen.
-
-Die Page-Dots sind dynamisch gekapselt und werden bei kleinen Displays (< 200px Höhe) ausgeblendet.
+### BACKLOG
+- Beta-Feldtest am Handgelenk.
+- Confidence Metric zur Datenreife.
+- Haptisches Feedback bei kritischer Reichweite.
+==============================================================================

@@ -885,11 +885,35 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var broadcastConsumedMin = weeklyState[:broadcastUsedMin] as Number;
         var daysWithPlan = forecast[:remainingDaysWithPlan] as Float;
         var footerColor = (daysWithPlan < 2.0f) ? Graphics.COLOR_RED : 0x00AAFF;
+        var nativeParams = {
+            :width => width,
+            :height => height,
+            :anchorY => nativeStatsBottom,
+            :slotGap => slotGap,
+            :barHeight => barHeight,
+            :labelFont => labelFont,
+            :valueFont => valueFont,
+            :label => tr(Rez.Strings.NativeLabel),
+            :consumedMinutes => nativeConsumedMin,
+            :budgetMinutes => nativeBudgetMin,
+            :baseColor => Graphics.COLOR_BLUE
+        } as Dictionary;
+        var broadcastParams = {
+            :width => width,
+            :height => height,
+            :anchorY => broadcastLabelY,
+            :slotGap => slotGap,
+            :barHeight => barHeight,
+            :labelFont => labelFont,
+            :valueFont => valueFont,
+            :label => tr(Rez.Strings.BroadcastRate),
+            :consumedMinutes => broadcastConsumedMin,
+            :budgetMinutes => broadcastBudgetMin,
+            :baseColor => 0xFF8800
+        } as Dictionary;
 
-        drawUpperBudgetSlot(dc, width, height, nativeStatsBottom, labelFont, valueFont, slotGap, barHeight,
-            tr(Rez.Strings.NativeLabel), nativeConsumedMin, nativeBudgetMin, Graphics.COLOR_BLUE);
-        drawLowerBudgetSlot(dc, width, height, broadcastLabelY, labelFont, valueFont, slotGap, barHeight,
-            tr(Rez.Strings.BroadcastRate), broadcastConsumedMin, broadcastBudgetMin, 0xFF8800);
+        drawUpperBudgetSlot(dc, nativeParams);
+        drawLowerBudgetSlot(dc, broadcastParams);
 
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.drawLine(lineInset, separatorY, width - lineInset, separatorY);
@@ -900,14 +924,15 @@ class BatteryBudgetDetailView extends WatchUi.View {
             Graphics.TEXT_JUSTIFY_CENTER);
     }
 
-    private function drawUpperBudgetSlot(dc as Dc, width as Number, height as Number,
-                                         statsBottom as Number,
-                                         labelFont as Graphics.FontType, valueFont as Graphics.FontType,
-                                         slotGap as Number, barHeight as Number,
-                                         label as String,
-                                         consumedMinutes as Number, budgetMinutes as Number,
-                                         baseColor as Number) as Void {
+    private function drawUpperBudgetSlot(dc as Dc, params as Dictionary) as Void {
+        var width = params[:width] as Number;
+        var height = params[:height] as Number;
         var centerX = width / 2;
+        var labelFont = params[:labelFont] as Graphics.FontType;
+        var valueFont = params[:valueFont] as Graphics.FontType;
+        var statsBottom = params[:anchorY] as Number;
+        var slotGap = params[:slotGap] as Number;
+        var barHeight = params[:barHeight] as Number;
         var labelH = dc.getFontHeight(labelFont);
         var valueH = dc.getFontHeight(valueFont);
         var statsY = statsBottom - valueH;
@@ -920,33 +945,45 @@ class BatteryBudgetDetailView extends WatchUi.View {
             statsY = barY + barHeight + slotGap;
         }
 
-        drawBudgetSlotCore(dc, width, height, centerX, labelY, barY, statsY, labelFont, valueFont, barHeight,
-            label, consumedMinutes, budgetMinutes, baseColor);
+        params[:centerX] = centerX;
+        params[:labelY] = labelY;
+        params[:barY] = barY;
+        params[:statsY] = statsY;
+        drawBudgetSlotCore(dc, params);
     }
 
-    private function drawLowerBudgetSlot(dc as Dc, width as Number, height as Number,
-                                         labelY as Number,
-                                         labelFont as Graphics.FontType, valueFont as Graphics.FontType,
-                                         slotGap as Number, barHeight as Number,
-                                         label as String,
-                                         consumedMinutes as Number, budgetMinutes as Number,
-                                         baseColor as Number) as Void {
+    private function drawLowerBudgetSlot(dc as Dc, params as Dictionary) as Void {
+        var width = params[:width] as Number;
         var centerX = width / 2;
+        var labelY = params[:anchorY] as Number;
+        var labelFont = params[:labelFont] as Graphics.FontType;
         var labelH = dc.getFontHeight(labelFont);
+        var slotGap = params[:slotGap] as Number;
+        var barHeight = params[:barHeight] as Number;
         var barY = labelY + labelH + slotGap;
         var statsY = barY + barHeight + slotGap;
 
-        drawBudgetSlotCore(dc, width, height, centerX, labelY, barY, statsY, labelFont, valueFont, barHeight,
-            label, consumedMinutes, budgetMinutes, baseColor);
+        params[:centerX] = centerX;
+        params[:labelY] = labelY;
+        params[:barY] = barY;
+        params[:statsY] = statsY;
+        drawBudgetSlotCore(dc, params);
     }
 
-    private function drawBudgetSlotCore(dc as Dc, width as Number, height as Number,
-                                        centerX as Number, labelY as Number, barY as Number, statsY as Number,
-                                        labelFont as Graphics.FontType, valueFont as Graphics.FontType,
-                                        barHeight as Number,
-                                        label as String,
-                                        consumedMinutes as Number, budgetMinutes as Number,
-                                        baseColor as Number) as Void {
+    private function drawBudgetSlotCore(dc as Dc, params as Dictionary) as Void {
+        var width = params[:width] as Number;
+        var height = params[:height] as Number;
+        var centerX = params[:centerX] as Number;
+        var labelY = params[:labelY] as Number;
+        var barY = params[:barY] as Number;
+        var statsY = params[:statsY] as Number;
+        var labelFont = params[:labelFont] as Graphics.FontType;
+        var valueFont = params[:valueFont] as Graphics.FontType;
+        var barHeight = params[:barHeight] as Number;
+        var label = params[:label] as String;
+        var consumedMinutes = params[:consumedMinutes] as Number;
+        var budgetMinutes = params[:budgetMinutes] as Number;
+        var baseColor = params[:baseColor] as Number;
         var barSafeWidth = getSafeTextWidthAtY(width, height, barY + (barHeight / 2));
         var maxBarWidth = ((width.toFloat() * 0.70f) + 0.5f).toNumber();
         var barWidth = maxBarWidth;
@@ -967,9 +1004,22 @@ class BatteryBudgetDetailView extends WatchUi.View {
             barColor = Graphics.COLOR_RED;
         }
 
+        params[:x] = barX;
+        params[:y] = barY;
+        params[:w] = barWidth;
+        params[:h] = barHeight;
+        params[:percent] = barPercentage;
+        params[:color] = barColor;
+
         dc.setColor(labelColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, labelY, labelFont, label, Graphics.TEXT_JUSTIFY_CENTER);
-        drawProgressBar(dc, barX, barY, barWidth, barHeight, barPercentage, barColor);
+        drawProgressBar(dc,
+            params[:x] as Number,
+            params[:y] as Number,
+            params[:w] as Number,
+            params[:h] as Number,
+            params[:percent] as Float,
+            params[:color] as Number);
 
         dc.setColor(valueColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, statsY, valueFont, formatBudgetHours(consumedMinutes, budgetMinutes),
