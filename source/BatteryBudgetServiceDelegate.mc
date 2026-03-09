@@ -43,7 +43,8 @@ class BatteryBudgetServiceDelegate extends System.ServiceDelegate {
                 currentState = lastSnapshot[:state] as BatteryBudget.State;
             }
 
-            var interval = logger.getAdaptiveInterval(currentState);
+            var broadcastCandidate = (lastSnapshot != null) && (lastSnapshot[:broadcastCandidate] == true);
+            var interval = logger.getAdaptiveInterval(currentState, broadcastCandidate);
             if (interval < 5) { interval = 5; }
 
             var nextTime = Time.now().add(new Time.Duration(interval * 60));

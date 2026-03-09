@@ -265,7 +265,9 @@ function testCalculateDrainRate(logger as Test.Logger) as Boolean {
         :endBatt   => 45,
         :state     => BatteryBudget.STATE_IDLE,
         :profile   => BatteryBudget.PROFILE_GENERIC,
-        :solarW    => 0
+        :solarW    => 0,
+        :hrDensity => 0,
+        :broadcastCandidate => false
     } as BatteryBudget.Segment;
 
     var rate = BatteryBudget.Segmenter.calculateDrainRate(seg);
@@ -285,7 +287,9 @@ function testCalculateDrainRateZeroDuration(logger as Test.Logger) as Boolean {
         :endBatt   => 45,
         :state     => BatteryBudget.STATE_IDLE,
         :profile   => BatteryBudget.PROFILE_GENERIC,
-        :solarW    => 0
+        :solarW    => 0,
+        :hrDensity => 0,
+        :broadcastCandidate => false
     } as BatteryBudget.Segment;
 
     var rate = BatteryBudget.Segmenter.calculateDrainRate(seg);
@@ -474,7 +478,9 @@ function testCalculateDrainRateChargingIsZero(logger as Test.Logger) as Boolean 
         :endBatt   => 55,
         :state     => BatteryBudget.STATE_CHARGING,
         :profile   => BatteryBudget.PROFILE_GENERIC,
-        :solarW    => 0
+        :solarW    => 0,
+        :hrDensity => 0,
+        :broadcastCandidate => false
     } as BatteryBudget.Segment;
 
     var rate = BatteryBudget.Segmenter.calculateDrainRate(seg);
@@ -549,5 +555,38 @@ function testSlotIndexAlwaysInBounds(logger as Test.Logger) as Boolean {
             return false;
         }
     }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// J. Broadcast detection and weekly-plan arithmetic
+// ---------------------------------------------------------------------------
+
+// Test J1: Dense HR samples with a valid heart rate should cross the broadcast threshold.
+(:test)
+function testBroadcastSignalThreshold(logger as Test.Logger) as Boolean {
+    var denseHr = 42.0f;     // ~7 samples in 10 min
+    var idleHr = 6.0f;       // sparse all-day sampling
+    var result = BatteryBudget.BroadcastDetector.meetsSignalThreshold(denseHr, idleHr, true, 7);
+    logger.debug("broadcastSignal=" + result.toString());
+    Test.assert(result);
+    return true;
+}
+
+// Test J2: Planned native and broadcast hours must reduce the remaining day estimate.
+(:test)
+function testRemainingDaysWithPlan(logger as Test.Logger) as Boolean {
+    var days = BatteryBudget.Forecaster.computeRemainingDaysWithPlan(
+        80,
+        1.0f,
+        8.0f,
+        3.0f,
+        120,
+        180
+    );
+
+    // (80 - 16 - 9) / 24 = 2.29 days
+    logger.debug("daysWithPlan=" + days.toString());
+    Test.assert(days > 2.2f && days < 2.4f);
     return true;
 }

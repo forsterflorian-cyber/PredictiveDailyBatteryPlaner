@@ -42,6 +42,10 @@
 
     <string id="TargetLevelLabel" scope="settings">Ziel-Akkustand (%)</string>
     <string id="TargetLevelPrompt" scope="settings">Mindest-Akku % am Tagesende (5-50)</string>
+    <string id="WeeklyNativeHoursLabel" scope="settings">Native Stunden/Woche</string>
+    <string id="WeeklyNativeHoursPrompt" scope="settings">Geplante native Garmin-Aktivitaetsstunden pro Woche</string>
+    <string id="WeeklyBroadcastHoursLabel" scope="settings">Broadcast Stunden/Woche</string>
+    <string id="WeeklyBroadcastHoursPrompt" scope="settings">Geplante HR-Broadcast-/Zwift-Stunden pro Woche</string>
 
     <string id="SleepStartHourLabel" scope="settings">Schlafbeginn (Stunde)</string>
     <string id="SleepStartHourPrompt" scope="settings">Stunde, ab der das Schlaffenster beginnt (18-23)</string>
@@ -72,6 +76,14 @@
     <string id="LabelBudget">Budget</string>
     <string id="UnitHourShort">h</string>
     <string id="UnitMinuteShort">m</string>
+    <string id="BroadcastConfirmPrompt">Hoher Verbrauch ohne Aktivitaet. HR-Broadcast / Zwift?</string>
+    <string id="NativeLabel">Native</string>
+    <string id="OfShort">von</string>
+    <string id="WeekPlanTitle">Wochenplan</string>
+    <string id="NativePlanLeft">Native offen</string>
+    <string id="BroadcastPlanLeft">Broadcast offen</string>
+    <string id="DaysWithPlan">Tage mit Plan</string>
+    <string id="WeekPlanAutoSync">Erkannte Sessions werden automatisch verrechnet</string>
 
     <!-- Risk levels -->
     <string id="RiskLow">NIED</string>
@@ -83,6 +95,7 @@
     <string id="IdleRate">Leerlauf</string>
     <string id="ActivityRate">Aktivität</string>
     <string id="PerHour">/h</string>
+    <string id="BroadcastRate">Broadcast</string>
     <string id="RunRate">Lauf</string>
     <string id="BikeRate">Rad</string>
     <string id="HikeRate">Wandern</string>

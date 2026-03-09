@@ -43,6 +43,12 @@
     <string id="TargetLevelLabel" scope="settings">Target Battery Level (%)</string>
     <string id="TargetLevelPrompt" scope="settings">Minimum battery % to keep at end of day (5-50)</string>
 
+    <string id="WeeklyNativeHoursLabel" scope="settings">Weekly Native Hours</string>
+    <string id="WeeklyNativeHoursPrompt" scope="settings">Planned native Garmin activity hours per week</string>
+
+    <string id="WeeklyBroadcastHoursLabel" scope="settings">Weekly Broadcast Hours</string>
+    <string id="WeeklyBroadcastHoursPrompt" scope="settings">Planned HR broadcast / Zwift hours per week</string>
+
     <string id="SleepStartHourLabel" scope="settings">Sleep Start Hour</string>
     <string id="SleepStartHourPrompt" scope="settings">Hour when sleep window begins (18-23)</string>
 
@@ -70,8 +76,16 @@
     <string id="BasedOnPatternShort">Based on pattern</string>
     <string id="MsgHighDrain">! High background drain</string>
     <string id="LabelBudget">Budget</string>
+    <string id="NativeLabel">Native</string>
+    <string id="OfShort">of</string>
     <string id="UnitHourShort">h</string>
     <string id="UnitMinuteShort">m</string>
+    <string id="BroadcastConfirmPrompt">High drain without activity. HR Broadcast / Zwift?</string>
+    <string id="WeekPlanTitle">Week Plan</string>
+    <string id="NativePlanLeft">Native left</string>
+    <string id="BroadcastPlanLeft">Broadcast left</string>
+    <string id="DaysWithPlan">Days w/ plan</string>
+    <string id="WeekPlanAutoSync">Auto-updates from detected sessions</string>
 
     <!-- Risk levels -->
     <string id="RiskLow">LOW</string>
@@ -82,6 +96,7 @@
     <string id="LearnedRates">Learned Rates</string>
     <string id="IdleRate">Idle</string>
     <string id="ActivityRate">Activity</string>
+    <string id="BroadcastRate">Broadcast</string>
     <string id="PerHour">/h</string>
     <string id="RunRate">Run</string>
     <string id="BikeRate">Bike</string>

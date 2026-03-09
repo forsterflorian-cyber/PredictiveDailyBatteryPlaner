@@ -48,6 +48,11 @@ module BatteryBudget {
                     shouldCreateNew = true;
                 }
 
+                // Split idle/sleep periods when the HR-broadcast signature changes.
+                if (!shouldCreateNew && (prev[:broadcastCandidate] != curr[:broadcastCandidate])) {
+                    shouldCreateNew = true;
+                }
+
                 // Segment duration cap (> 4 hours → split for accuracy)
                 if (!shouldCreateNew) {
                     var potentialDuration = (curr[:tMin] as Number) - (currentSegment[:startTMin] as Number);
@@ -70,7 +75,9 @@ module BatteryBudget {
                     :endBatt => curr[:battPct],
                     :state => curr[:state],
                     :profile => curr[:profile],
-                    :solarW => ((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2
+                    :solarW => ((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2,
+                    :hrDensity => ((prev[:hrDensity] as Number) + (curr[:hrDensity] as Number)) / 2,
+                    :broadcastCandidate => (prev[:broadcastCandidate] as Boolean) || (curr[:broadcastCandidate] as Boolean)
                 } as Segment;
                 _storage.setCurrentSegment(newSegment);
             } else {
@@ -83,7 +90,9 @@ module BatteryBudget {
                     :endBatt => curr[:battPct],
                     :state => seg[:state],
                     :profile => seg[:profile],
-                    :solarW => ((seg[:solarW] as Number) + (curr[:solarW] as Number)) / 2
+                    :solarW => ((seg[:solarW] as Number) + (curr[:solarW] as Number)) / 2,
+                    :hrDensity => ((seg[:hrDensity] as Number) + (curr[:hrDensity] as Number)) / 2,
+                    :broadcastCandidate => (seg[:broadcastCandidate] as Boolean) || (curr[:broadcastCandidate] as Boolean)
                 } as Segment;
                 _storage.setCurrentSegment(extendedSegment);
             }
@@ -93,19 +102,85 @@ module BatteryBudget {
         private function finalizeSegment(segment as Segment, endSnapshot as Snapshot) as Void {
             segment[:endTMin] = endSnapshot[:tMin];
             segment[:endBatt] = endSnapshot[:battPct];
+            segment[:hrDensity] = (((segment[:hrDensity] as Number) + (endSnapshot[:hrDensity] as Number)) / 2);
+            segment[:broadcastCandidate] = (segment[:broadcastCandidate] as Boolean) || (endSnapshot[:broadcastCandidate] as Boolean);
+
+            segment = classifyBroadcastSegment(segment);
+
+            if (isValidForPlanning(segment)) {
+                _storage.recordUsageForSegment(segment[:state] as State,
+                                               segment[:startTMin] as Number,
+                                               segment[:endTMin] as Number);
+            }
             
             // Check if segment is valid for learning
             if (isValidForLearning(segment)) {
-                // Trigger learning
-                var drainLearner = new DrainLearner();
-                drainLearner.learnFromSegment(segment);
-                
-                // Update pattern if activity
+                if (segment[:state] == STATE_BROADCAST) {
+                    _storage.incrementStat("totalBroadcastSegments");
+                    _storage.enqueuePendingBroadcastEvent({
+                        :startTMin => segment[:startTMin],
+                        :endTMin => segment[:endTMin],
+                        :durationMin => (segment[:endTMin] as Number) - (segment[:startTMin] as Number),
+                        :battDrop => (segment[:startBatt] as Number) - (segment[:endBatt] as Number),
+                        :drainRate => Segmenter.calculateDrainRate(segment),
+                        :weekKey => TimeUtil.getCurrentWeekKey(),
+                        :hrDensity => segment[:hrDensity] as Number
+                    } as PendingBroadcastEvent);
+                } else {
+                    // Trigger learning
+                    var drainLearner = new DrainLearner();
+                    drainLearner.learnFromSegment(segment);
+                }
+
+                // Update pattern only for native activities
                 if (segment[:state] == STATE_ACTIVITY) {
                     var patternLearner = new PatternLearner();
                     patternLearner.learnFromSegment(segment);
                 }
             }
+        }
+
+        private function classifyBroadcastSegment(segment as Segment) as Segment {
+            var state = segment[:state] as State;
+            if (state != STATE_IDLE && state != STATE_SLEEP) {
+                return segment;
+            }
+
+            if (!(segment[:broadcastCandidate] as Boolean)) {
+                return segment;
+            }
+
+            var rate = Segmenter.calculateDrainRate(segment);
+            if (rate <= 0.0f) {
+                return segment;
+            }
+
+            var rates = _storage.getDrainRates();
+            var idleRate = rates[:idle] as Float;
+            var idleDensity = rates[:hrDensityIdle] as Float;
+            if (idleDensity <= 0.0f) {
+                idleDensity = DEFAULT_HR_DENSITY_IDLE;
+            }
+
+            var hasHeartRate = (segment[:hrDensity] as Number) > 0;
+            if (BroadcastDetector.meetsSignalThreshold((segment[:hrDensity] as Number).toFloat(),
+                                                       idleDensity,
+                                                       hasHeartRate,
+                                                       MIN_SEGMENT_DURATION_MIN)
+                && BroadcastDetector.meetsDrainSpike(rate, idleRate)) {
+                segment[:state] = STATE_BROADCAST;
+            }
+
+            return segment;
+        }
+
+        private function isValidForPlanning(segment as Segment) as Boolean {
+            if (segment[:state] == STATE_CHARGING || segment[:state] == STATE_UNKNOWN) {
+                return false;
+            }
+
+            var duration = (segment[:endTMin] as Number) - (segment[:startTMin] as Number);
+            return duration >= MIN_SEGMENT_DURATION_MIN;
         }
         
         // Check if segment is valid for drain rate learning

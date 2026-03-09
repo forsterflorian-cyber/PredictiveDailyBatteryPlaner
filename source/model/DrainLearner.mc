@@ -14,6 +14,7 @@ module BatteryBudget {
         // spikes (sensor glitch, app startup burst, etc.) and are clamped — not
         // dropped — so they still nudge the EMA slightly without dominating it.
         private const SANITY_MAX_IDLE     = 5.0f;   // >5 %/h idle = spike
+        private const SANITY_MAX_BROADCAST = 8.0f;  // HR broadcast should stay below GPS activity
         private const SANITY_MAX_ACTIVITY = 15.0f;  // >15 %/h activity = spike
         private const SANITY_MAX_SLEEP    = 3.0f;   // sleep should stay very low
         
@@ -64,6 +65,8 @@ module BatteryBudget {
                 incrementCount(counts, :idle);
                 _storage.incrementStat("totalIdleSegments");
 
+                updateIdleHeartRateDensity(rates, segment[:hrDensity] as Number);
+
                 // Estimate solar gain rate from idle segments where solar is meaningful.
                 // If measured drain is less than the default idle rate, solar is compensating.
                 var solarW = segment[:solarW] as Number;
@@ -90,6 +93,7 @@ module BatteryBudget {
                 // Could track separately, but for MVP treat as low idle
                 var sleepRate = rate * 0.8f; // Sleep tends to be lower than idle
                 rates[:idle] = updateEMA(rates[:idle] as Float, sleepRate);
+                updateIdleHeartRateDensity(rates, segment[:hrDensity] as Number);
             }
             // STATE_CHARGING and STATE_UNKNOWN are skipped
 
@@ -127,6 +131,8 @@ module BatteryBudget {
             var cap = SANITY_MAX_ACTIVITY;
             if (state == STATE_IDLE) {
                 cap = SANITY_MAX_IDLE;
+            } else if (state == STATE_BROADCAST) {
+                cap = SANITY_MAX_BROADCAST;
             } else if (state == STATE_SLEEP) {
                 cap = SANITY_MAX_SLEEP;
             }
@@ -194,6 +200,45 @@ module BatteryBudget {
             // Fallback: not enough samples for this profile
             return rates[:activityGeneric] as Float;
         }
+
+        function learnConfirmedBroadcastEvent(event as PendingBroadcastEvent) as Void {
+            var rate = event[:drainRate] as Float;
+            if (rate < MIN_RATE || rate > MAX_RATE) {
+                return;
+            }
+
+            var rates = _storage.getDrainRates();
+            var counts = rates[:sampleCounts];
+            if (counts == null) {
+                counts = {} as Dictionary<Symbol, Number>;
+            }
+
+            rate = applySanityGuard(rate, STATE_BROADCAST);
+            rates[:broadcast] = updateEMA(rates[:broadcast] as Float, rate);
+            incrementCount(counts, :broadcast);
+            incrementCount(counts, :broadcastConfirmed);
+            rates[:sampleCounts] = counts;
+            _storage.incrementStat("totalConfirmedBroadcastSegments");
+            _storage.setDrainRates(rates);
+        }
+
+        private function updateIdleHeartRateDensity(rates as DrainRates, hrDensity as Number) as Void {
+            if (hrDensity <= 0) {
+                return;
+            }
+
+            var density = hrDensity.toFloat();
+            if (density > 120.0f) {
+                density = 120.0f;
+            }
+
+            var current = rates[:hrDensityIdle] as Float;
+            if (current <= 0.0f) {
+                rates[:hrDensityIdle] = density;
+            } else {
+                rates[:hrDensityIdle] = (current * 0.8f + density * 0.2f);
+            }
+        }
         
         // Increment sample count for a category
         private function incrementCount(counts as Dictionary<Symbol, Number>, key as Symbol) as Void {
@@ -223,7 +268,7 @@ module BatteryBudget {
                 return {} as Dictionary;
             }
             var copy = {} as Dictionary;
-            var keys = [:idle, :activityGeneric, :run, :bike, :hike, :swim];
+            var keys = [:idle, :activityGeneric, :broadcast, :broadcastConfirmed, :run, :bike, :hike, :swim];
             for (var i = 0; i < keys.size(); i++) {
                 var k = keys[i];
                 if ((counts as Dictionary<Symbol, Number>).hasKey(k)) {
@@ -243,6 +288,11 @@ module BatteryBudget {
         function getActivityRate() as Float {
             var rates = _storage.getDrainRates();
             return rates[:activityGeneric] as Float;
+        }
+
+        function getBroadcastRate() as Float {
+            var rates = _storage.getDrainRates();
+            return rates[:broadcast] as Float;
         }
         
         // Calculate confidence based on sample counts

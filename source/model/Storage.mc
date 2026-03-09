@@ -15,10 +15,13 @@ module BatteryBudget {
         private const KEY_CURRENT_SEGMENT = "cs";
         private const KEY_LAST_SNAPSHOT = "ls";
         private const KEY_STATS = "st";
+        private const KEY_WEEKLY_PLAN_STATE = "wps";
+        private const KEY_PENDING_BROADCAST_EVENTS = "pb";
         // Compact battery history: flat array [tMin1, batt1, tMin2, batt2, ...]
         // Max BATTERY_HISTORY_MAX_PAIRS pairs = 2*BATTERY_HISTORY_MAX_PAIRS numbers.
         private const KEY_BATTERY_HISTORY = "bh";
         private const BATTERY_HISTORY_MAX_PAIRS = 24;
+        private const MAX_PENDING_BROADCAST_EVENTS = 3;
 
         // Singleton instance
         private static var _instance as StorageManager?;
@@ -33,6 +36,8 @@ module BatteryBudget {
         private var _lastSnapshotLoaded as Boolean;
         private var _stats as Dictionary?;
         private var _batteryHistory as Array<Number>?;
+        private var _weeklyPlanState as WeeklyPlanState?;
+        private var _pendingBroadcastEvents as Array<PendingBroadcastEvent>?;
 
         // Settings cache
         private var _settings as Dictionary?;
@@ -46,6 +51,10 @@ module BatteryBudget {
                 _instance = new StorageManager();
             }
             return _instance;
+        }
+
+        static function resetInstanceForTests() as Void {
+            _instance = null;
         }
         
         private function initialize() {
@@ -62,6 +71,8 @@ module BatteryBudget {
             saveDrainRates();
             savePattern();
             saveStats();
+            saveWeeklyPlanState();
+            savePendingBroadcastEvents();
             // Note: Last snapshot is saved immediately in setLastSnapshot()
         }
         
@@ -83,7 +94,9 @@ module BatteryBudget {
                             :endBatt => arr[3] as Number,
                             :state => arr[4] as State,
                             :profile => arr[5] as Profile,
-                            :solarW => arr.size() >= 7 ? arr[6] as Number : 0
+                            :solarW => arr.size() >= 7 ? arr[6] as Number : 0,
+                            :hrDensity => arr.size() >= 8 ? arr[7] as Number : 0,
+                            :broadcastCandidate => arr.size() >= 9 ? arr[8] as Boolean : false
                         } as Segment;
                     }
                 }
@@ -116,7 +129,9 @@ module BatteryBudget {
                         segment[:endBatt],
                         segment[:state],
                         segment[:profile],
-                        segment[:solarW]
+                        segment[:solarW],
+                        segment[:hrDensity],
+                        segment[:broadcastCandidate]
                     ]);
                 }
             } catch (ex) {
@@ -135,6 +150,7 @@ module BatteryBudget {
 
                     var idle = DEFAULT_RATE_IDLE;
                     var activityGeneric = DEFAULT_RATE_ACTIVITY;
+                    var broadcast = DEFAULT_RATE_BROADCAST;
                     var run = null as Float?;
                     var bike = null as Float?;
                     var hike = null as Float?;
@@ -150,6 +166,11 @@ module BatteryBudget {
                         var v = dict["a"];
                         if (v instanceof Float) { activityGeneric = v as Float; }
                         else if (v instanceof Number) { activityGeneric = (v as Number).toFloat(); }
+                    }
+                    if (dict.hasKey("br")) {
+                        var v = dict["br"];
+                        if (v instanceof Float) { broadcast = v as Float; }
+                        else if (v instanceof Number) { broadcast = (v as Number).toFloat(); }
                     }
                     if (dict.hasKey("r")) {
                         var v = dict["r"];
@@ -182,6 +203,12 @@ module BatteryBudget {
                             if (rawCounts.hasKey(:activityGeneric) && rawCounts[:activityGeneric] instanceof Number) { sampleCounts[:activityGeneric] = rawCounts[:activityGeneric] as Number; }
                             else if (rawCounts.hasKey("activityGeneric") && rawCounts["activityGeneric"] instanceof Number) { sampleCounts[:activityGeneric] = rawCounts["activityGeneric"] as Number; }
 
+                            if (rawCounts.hasKey(:broadcast) && rawCounts[:broadcast] instanceof Number) { sampleCounts[:broadcast] = rawCounts[:broadcast] as Number; }
+                            else if (rawCounts.hasKey("broadcast") && rawCounts["broadcast"] instanceof Number) { sampleCounts[:broadcast] = rawCounts["broadcast"] as Number; }
+
+                            if (rawCounts.hasKey(:broadcastConfirmed) && rawCounts[:broadcastConfirmed] instanceof Number) { sampleCounts[:broadcastConfirmed] = rawCounts[:broadcastConfirmed] as Number; }
+                            else if (rawCounts.hasKey("broadcastConfirmed") && rawCounts["broadcastConfirmed"] instanceof Number) { sampleCounts[:broadcastConfirmed] = rawCounts["broadcastConfirmed"] as Number; }
+
                             if (rawCounts.hasKey(:run) && rawCounts[:run] instanceof Number) { sampleCounts[:run] = rawCounts[:run] as Number; }
                             else if (rawCounts.hasKey("run") && rawCounts["run"] instanceof Number) { sampleCounts[:run] = rawCounts["run"] as Number; }
 
@@ -198,6 +225,7 @@ module BatteryBudget {
 
                     var solarGain = 0.0f;
                     var recentSolar = 0;
+                    var hrDensityIdle = DEFAULT_HR_DENSITY_IDLE;
                     if (dict.hasKey("sg")) {
                         var v = dict["sg"];
                         if (v instanceof Float) { solarGain = v as Float; }
@@ -207,17 +235,24 @@ module BatteryBudget {
                         var v = dict["rs"];
                         if (v instanceof Number) { recentSolar = v as Number; }
                     }
+                    if (dict.hasKey("hd")) {
+                        var v = dict["hd"];
+                        if (v instanceof Float) { hrDensityIdle = v as Float; }
+                        else if (v instanceof Number) { hrDensityIdle = (v as Number).toFloat(); }
+                    }
 
                     return {
                         :idle => idle,
                         :activityGeneric => activityGeneric,
+                        :broadcast => broadcast,
                         :run => run,
                         :bike => bike,
                         :hike => hike,
                         :swim => swim,
                         :sampleCounts => sampleCounts,
                         :solarGain => solarGain,
-                        :recentSolar => recentSolar
+                        :recentSolar => recentSolar,
+                        :hrDensityIdle => hrDensityIdle
                     } as DrainRates;
                 }
             } catch (ex) {
@@ -230,13 +265,15 @@ module BatteryBudget {
             return {
                 :idle => DEFAULT_RATE_IDLE,
                 :activityGeneric => DEFAULT_RATE_ACTIVITY,
+                :broadcast => DEFAULT_RATE_BROADCAST,
                 :run => null,
                 :bike => null,
                 :hike => null,
                 :swim => null,
                 :sampleCounts => {} as Dictionary<Symbol, Number>,
                 :solarGain => 0.0f,
-                :recentSolar => 0
+                :recentSolar => 0,
+                :hrDensityIdle => DEFAULT_HR_DENSITY_IDLE
             } as DrainRates;
         }
         
@@ -261,6 +298,7 @@ module BatteryBudget {
                     var dict = {
                         "i" => _drainRates[:idle],
                         "a" => _drainRates[:activityGeneric],
+                        "br" => _drainRates[:broadcast],
                         "c" => _drainRates[:sampleCounts]
                     } as Dictionary;
                     if (_drainRates[:run] != null) {
@@ -279,6 +317,7 @@ module BatteryBudget {
                     if ((_drainRates[:recentSolar] as Number) > 0) {
                         dict["rs"] = _drainRates[:recentSolar];
                     }
+                    dict["hd"] = _drainRates[:hrDensityIdle];
                     Storage.setValue(KEY_DRAIN_RATES, dict);
                 } catch (ex) {
                     // Ignore storage write failures
@@ -377,7 +416,10 @@ module BatteryBudget {
                             :battPct => arr[1] as Number,
                             :state => arr[2] as State,
                             :profile => arr[3] as Profile,
-                            :solarW => arr.size() >= 5 ? arr[4] as Number : 0
+                            :solarW => arr.size() >= 5 ? arr[4] as Number : 0,
+                            :heartRate => arr.size() >= 6 ? arr[5] as Number : 0,
+                            :hrDensity => arr.size() >= 7 ? arr[6] as Number : 0,
+                            :broadcastCandidate => arr.size() >= 8 ? arr[7] as Boolean : false
                         } as Snapshot;
                     }
                 }
@@ -404,7 +446,10 @@ module BatteryBudget {
                     snapshot[:battPct],
                     snapshot[:state],
                     snapshot[:profile],
-                    snapshot[:solarW]
+                    snapshot[:solarW],
+                    snapshot[:heartRate],
+                    snapshot[:hrDensity],
+                    snapshot[:broadcastCandidate]
                 ]);
             } catch (ex) {
                 // Ignore storage write failures
@@ -419,6 +464,8 @@ module BatteryBudget {
             return {
                 "firstDataDay" => 0,
                 "totalActivitySegments" => 0,
+                "totalBroadcastSegments" => 0,
+                "totalConfirmedBroadcastSegments" => 0,
                 "totalIdleSegments" => 0,
                 "slotsCovered" => 0,
                 "lastDecayTime" => 0
@@ -427,7 +474,8 @@ module BatteryBudget {
 
         private function normalizeStats(data as Dictionary) as Dictionary {
             var stats = createDefaultStats();
-            var keys = ["firstDataDay", "totalActivitySegments", "totalIdleSegments", "slotsCovered", "lastDecayTime"];
+            var keys = ["firstDataDay", "totalActivitySegments", "totalBroadcastSegments",
+                        "totalConfirmedBroadcastSegments", "totalIdleSegments", "slotsCovered", "lastDecayTime"];
             for (var i = 0; i < keys.size(); i++) {
                 var key = keys[i];
                 if (data.hasKey(key) && data[key] instanceof Number) {
@@ -498,6 +546,8 @@ module BatteryBudget {
                 :sampleIntervalMin => clampNumber(readNumberProperty("sampleIntervalMin", 15), 5, 120),
                 :learningWindowDays => clampNumber(readNumberProperty("learningWindowDays", 14), 1, 60),
                 :targetLevel => clampNumber(readNumberProperty("targetLevel", TARGET_LEVEL), 5, 50),
+                :weeklyNativeHours => clampNumber(readNumberProperty("weeklyNativeHours", 0), 0, 40),
+                :weeklyBroadcastHours => clampNumber(readNumberProperty("weeklyBroadcastHours", 0), 0, 40),
                 :sleepStartHour => clampNumber(readNumberProperty("sleepStartHour", SLEEP_START_HOUR), 18, 23),
                 :sleepEndHour => clampNumber(readNumberProperty("sleepEndHour", SLEEP_END_HOUR), 0, 10)
             };
@@ -640,6 +690,228 @@ module BatteryBudget {
         }
 
         //--------------------------------------------------
+        // Weekly plan state
+        //--------------------------------------------------
+
+        private function createDefaultWeeklyPlanState() as WeeklyPlanState {
+            return {
+                :weekKey => TimeUtil.getCurrentWeekKey(),
+                :nativeUsedMin => 0,
+                :broadcastUsedMin => 0
+            } as WeeklyPlanState;
+        }
+
+        private function normalizeWeeklyPlanState(state as WeeklyPlanState) as WeeklyPlanState {
+            return StorageManager.normalizeWeeklyPlanStateForWeek(state, TimeUtil.getCurrentWeekKey());
+        }
+
+        static function normalizeWeeklyPlanStateForWeek(state as WeeklyPlanState, currentWeekKey as Number)
+            as WeeklyPlanState {
+            if ((state[:weekKey] as Number) != currentWeekKey) {
+                return {
+                    :weekKey => currentWeekKey,
+                    :nativeUsedMin => 0,
+                    :broadcastUsedMin => 0
+                } as WeeklyPlanState;
+            }
+            return state;
+        }
+
+        private function loadWeeklyPlanState() as WeeklyPlanState? {
+            try {
+                var data = Storage.getValue(KEY_WEEKLY_PLAN_STATE);
+                if (data instanceof Array) {
+                    var arr = data as Array;
+                    if (arr.size() >= 3) {
+                        return normalizeWeeklyPlanState({
+                            :weekKey => arr[0] as Number,
+                            :nativeUsedMin => arr[1] as Number,
+                            :broadcastUsedMin => arr[2] as Number
+                        } as WeeklyPlanState);
+                    }
+                }
+            } catch (ex) {}
+            return null;
+        }
+
+        private function saveWeeklyPlanState() as Void {
+            if (_weeklyPlanState != null) {
+                try {
+                    Storage.setValue(KEY_WEEKLY_PLAN_STATE, [
+                        _weeklyPlanState[:weekKey],
+                        _weeklyPlanState[:nativeUsedMin],
+                        _weeklyPlanState[:broadcastUsedMin]
+                    ]);
+                } catch (ex) {}
+            }
+        }
+
+        function getWeeklyPlanState() as WeeklyPlanState {
+            if (_weeklyPlanState == null) {
+                var loaded = loadWeeklyPlanState();
+                _weeklyPlanState = (loaded != null) ? loaded : createDefaultWeeklyPlanState();
+                saveWeeklyPlanState();
+            } else {
+                _weeklyPlanState = normalizeWeeklyPlanState(_weeklyPlanState as WeeklyPlanState);
+            }
+            return _weeklyPlanState as WeeklyPlanState;
+        }
+
+        function setWeeklyPlanState(state as WeeklyPlanState) as Void {
+            _weeklyPlanState = normalizeWeeklyPlanState(state);
+            saveWeeklyPlanState();
+        }
+
+        function recordUsageForSegment(state as State, startTMin as Number, endTMin as Number) as Void {
+            if (endTMin <= startTMin) {
+                return;
+            }
+            if (state != STATE_ACTIVITY && state != STATE_BROADCAST) {
+                return;
+            }
+
+            var weekly = getWeeklyPlanState();
+            var weekKey = weekly[:weekKey] as Number;
+            var overlapMin = TimeUtil.getOverlapMinutesWithinWeek(startTMin, endTMin, weekKey);
+            if (overlapMin <= 0) {
+                return;
+            }
+
+            if (state == STATE_ACTIVITY) {
+                weekly[:nativeUsedMin] = (weekly[:nativeUsedMin] as Number) + overlapMin;
+            } else {
+                weekly[:broadcastUsedMin] = (weekly[:broadcastUsedMin] as Number) + overlapMin;
+            }
+            setWeeklyPlanState(weekly);
+        }
+
+        function rollbackBroadcastUsageForEvent(event as PendingBroadcastEvent) as Void {
+            var weekly = getWeeklyPlanState();
+            if ((weekly[:weekKey] as Number) != (event[:weekKey] as Number)) {
+                return;
+            }
+
+            var nextValue = (weekly[:broadcastUsedMin] as Number) - (event[:durationMin] as Number);
+            if (nextValue < 0) { nextValue = 0; }
+            weekly[:broadcastUsedMin] = nextValue;
+            setWeeklyPlanState(weekly);
+        }
+
+        //--------------------------------------------------
+        // Pending broadcast validation queue
+        //--------------------------------------------------
+
+        private function loadPendingBroadcastEvents() as Array<PendingBroadcastEvent>? {
+            try {
+                var data = Storage.getValue(KEY_PENDING_BROADCAST_EVENTS);
+                if (data instanceof Array) {
+                    var raw = data as Array;
+                    var events = [] as Array<PendingBroadcastEvent>;
+                    for (var i = 0; i < raw.size(); i++) {
+                        var item = raw[i];
+                        if (item instanceof Array) {
+                            var arr = item as Array;
+                            if (arr.size() >= 7) {
+                                events.add({
+                                    :startTMin => arr[0] as Number,
+                                    :endTMin => arr[1] as Number,
+                                    :durationMin => arr[2] as Number,
+                                    :battDrop => arr[3] as Number,
+                                    :drainRate => (arr[4] as Number).toFloat(),
+                                    :weekKey => arr[5] as Number,
+                                    :hrDensity => arr[6] as Number
+                                } as PendingBroadcastEvent);
+                            }
+                        }
+                    }
+                    return events;
+                }
+            } catch (ex) {}
+            return null;
+        }
+
+        private function savePendingBroadcastEvents() as Void {
+            if (_pendingBroadcastEvents != null) {
+                try {
+                    var payload = [] as Array;
+                    for (var i = 0; i < _pendingBroadcastEvents.size(); i++) {
+                        var event = _pendingBroadcastEvents[i] as PendingBroadcastEvent;
+                        payload.add([
+                            event[:startTMin],
+                            event[:endTMin],
+                            event[:durationMin],
+                            event[:battDrop],
+                            event[:drainRate],
+                            event[:weekKey],
+                            event[:hrDensity]
+                        ]);
+                    }
+                    Storage.setValue(KEY_PENDING_BROADCAST_EVENTS, payload);
+                } catch (ex) {}
+            }
+        }
+
+        function getPendingBroadcastEvents() as Array<PendingBroadcastEvent> {
+            if (_pendingBroadcastEvents == null) {
+                var loaded = loadPendingBroadcastEvents();
+                _pendingBroadcastEvents = (loaded != null) ? loaded : ([] as Array<PendingBroadcastEvent>);
+            }
+            _pendingBroadcastEvents = filterCurrentWeekEvents(_pendingBroadcastEvents as Array<PendingBroadcastEvent>);
+            savePendingBroadcastEvents();
+            return _pendingBroadcastEvents as Array<PendingBroadcastEvent>;
+        }
+
+        function getNextPendingBroadcastEvent() as PendingBroadcastEvent? {
+            var events = getPendingBroadcastEvents();
+            return events.size() > 0 ? events[0] as PendingBroadcastEvent : null;
+        }
+
+        function enqueuePendingBroadcastEvent(event as PendingBroadcastEvent) as Void {
+            var events = getPendingBroadcastEvents();
+            events.add(event);
+
+            while (events.size() > MAX_PENDING_BROADCAST_EVENTS) {
+                events = slicePendingEvents(events, 1);
+            }
+
+            _pendingBroadcastEvents = events;
+            savePendingBroadcastEvents();
+        }
+
+        function popNextPendingBroadcastEvent() as PendingBroadcastEvent? {
+            var events = getPendingBroadcastEvents();
+            if (events.size() == 0) {
+                return null;
+            }
+
+            var event = events[0] as PendingBroadcastEvent;
+            _pendingBroadcastEvents = slicePendingEvents(events, 1);
+            savePendingBroadcastEvents();
+            return event;
+        }
+
+        private function slicePendingEvents(events as Array<PendingBroadcastEvent>, startIndex as Number)
+            as Array<PendingBroadcastEvent> {
+            var sliced = [] as Array<PendingBroadcastEvent>;
+            for (var i = startIndex; i < events.size(); i++) {
+                sliced.add(events[i] as PendingBroadcastEvent);
+            }
+            return sliced;
+        }
+
+        private function filterCurrentWeekEvents(events as Array<PendingBroadcastEvent>) as Array<PendingBroadcastEvent> {
+            var weekKey = TimeUtil.getCurrentWeekKey();
+            var filtered = [] as Array<PendingBroadcastEvent>;
+            for (var i = 0; i < events.size(); i++) {
+                var event = events[i] as PendingBroadcastEvent;
+                if ((event[:weekKey] as Number) == weekKey) {
+                    filtered.add(event);
+                }
+            }
+            return filtered;
+        }
+
+        //--------------------------------------------------
         // Cleanup old data
         //--------------------------------------------------
 
@@ -681,6 +953,8 @@ module BatteryBudget {
             _stats = null;
             _settings = null;
             _batteryHistory = null;
+            _weeklyPlanState = null;
+            _pendingBroadcastEvents = null;
         }
 
         // Reset learned model payloads completely for a clean re-learning cycle.
@@ -690,12 +964,16 @@ module BatteryBudget {
             try { Storage.deleteValue(KEY_PATTERN); } catch (ex) {}
             try { Storage.deleteValue(KEY_STATS); } catch (ex) {}
             try { Storage.deleteValue(KEY_LAST_SNAPSHOT); } catch (ex) {}
+            try { Storage.deleteValue(KEY_WEEKLY_PLAN_STATE); } catch (ex) {}
+            try { Storage.deleteValue(KEY_PENDING_BROADCAST_EVENTS); } catch (ex) {}
 
             _drainRates = null;
             _pattern = null;
             _stats = null;
             _lastSnapshot = null;
             _lastSnapshotLoaded = true;
+            _weeklyPlanState = null;
+            _pendingBroadcastEvents = null;
 
             // Also reset in-memory segment/history state to avoid stale cross-reset learning.
             _currentSegment = null;

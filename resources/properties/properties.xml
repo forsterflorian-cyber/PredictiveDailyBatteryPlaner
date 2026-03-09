@@ -9,6 +9,8 @@
     <property id="learningWindowDays" type="number">14</property>
     <property id="resetData" type="boolean">false</property>
     <property id="targetLevel" type="number">15</property>
+    <property id="weeklyNativeHours" type="number">0</property>
+    <property id="weeklyBroadcastHours" type="number">0</property>
     <property id="sleepStartHour" type="number">22</property>
     <property id="sleepEndHour" type="number">6</property>
 </properties>

@@ -1,150 +1,114 @@
-# BatteryBudget – Connect IQ Store Listing (v1.0.0)
-
----
-
-## Kurzbeschreibung (Deutsch, max. 80 Zeichen)
-
-Intelligente Akku-Prognose – lernt automatisch aus deinem Nutzungsverhalten.
-
----
-
-## Beschreibung (Deutsch)
-
-**BatteryBudget** beantwortet die eine Frage, die jeder Garmin-Traeger kennt:
-"Wie viel Akku habe ich heute Abend noch?"
-
-Das Widget lernt vollstaendig auf der Uhr – ohne Cloud, ohne manuellen Aufwand:
-
-**Adaptives Lernen**
-BatteryBudget beobachtet deinen echten Akku-Verbrauch in verschiedenen Zustaenden
-(Standby, Laufen, Radfahren, Wandern, Schlaf) und passt seine Vorhersage
-automatisch an deine Uhr und dein Trainingsverhalten an. Der EMA-Lernalgorithmus
-aktualisiert sich bei jeder neuen Messung – je mehr Tage du die App nutzt, desto
-praeziser wird die Prognose.
-
-**Solar-Synergie (Fenix/Epix)**
-Auf Solar-faehigen Uhren beruecksichtigt die App die aktuelle Sonnenintensitaet und
-die gelernte Solar-Ladegeschwindigkeit direkt in der Prognose.
-
-**Aktivitaets-Planer (What-If)**
-Willst du heute noch eine Stunde laufen? Die App zeigt dir sofort, wie viel Akku
-du danach voraussichtlich noch haben wirst – basierend auf deiner gelernten,
-sportspezifischen Verbrauchsrate.
-
-**3 Prognosen auf einen Blick**
-- Typisch: dein wahrscheinlichster Akkustand heute Abend
-- Konservativ: das pessimistische Szenario
-- Optimistisch: bestes Fall-Szenario
-
-**Risiko-Ampel**: NIEDRIG / MITTEL / HOCH – sofort erkennbar.
-
-**Hintergrund-Logging**
-Ein leichtgewichtiger Background-Prozess (<32 kB RAM) schreibt alle 15 Minuten
-einen Snapshot, damit die Prognose auch dann praezise bleibt, wenn das Widget
-nicht geoeffnet ist.
-
-**Hinweis zur Lernphase:**
-In den ersten 24–48 Stunden zeigt die App "LEARNING" und eine grobe Schaetzung.
-Nach ca. 14 Tagen Nutzung liefert die Prognose ihre volle Genauigkeit.
-
-**Alle Daten bleiben auf der Uhr.** Keine Cloud, keine Synchronisation, kein Account.
-
----
+# BatteryBudget - Connect IQ Store Listing
 
 ## Short Description (English, max. 80 chars)
 
-Smart battery forecast that learns from your real usage — on-device, no cloud.
-
----
+Smart on-watch battery forecast with weekly training budgets and confidence.
 
 ## Description (English)
 
-**BatteryBudget** answers the question every Garmin wearer asks:
-"How much battery will I have left tonight?"
+BatteryBudget helps you answer the question that matters before a workout:
 
-The widget learns entirely on your watch — no cloud, no manual setup required.
+**Will my watch battery still be ready when I need it?**
 
-**Adaptive Prediction**
-BatteryBudget tracks your real battery drain across different states
-(idle, running, cycling, hiking, sleep) and adapts its forecast to your specific
-watch and activity style. The EMA learning algorithm updates with every new
-measurement — the longer you use the app, the more accurate it becomes.
+It combines a smart battery forecast with weekly planning and fully local,
+on-watch learning.
 
-**Solar Synergy (Fenix / Epix)**
-On solar-capable watches, the app factors in current sunlight intensity and your
-learned solar charge rate directly into the end-of-day forecast.
+**Smart Forecast**
+BatteryBudget separates two real-world battery loads:
 
-**Activity Planner (What-If)**
-Thinking about a 60-minute run this afternoon? The app immediately shows how much
-battery you'd likely have afterward — based on your own learned, sport-specific
-drain rate.
+- **Native Garmin activities** such as runs, rides, and GPS workouts
+- **External HR broadcast sessions** such as Zwift, trainer rides, or other
+  cases where the watch powers the heart-rate sensor and radio stack without a
+  native activity running
 
-**3 Forecasts at a Glance**
-- Typical: your most probable end-of-day battery level
-- Conservative: the pessimistic scenario
-- Optimistic: best-case scenario
+That dual model produces a more realistic forecast than a single generic drain
+curve.
 
-**Risk Indicator**: LOW / MED / HIGH — spot the risk without squinting at numbers.
+**Confidence-Based Learning**
+The app learns from your real usage with exponential moving averages (EMA) and
+a weekly activity pattern model. Confidence rises as more verified data becomes
+available, so the forecast becomes more personal over time while staying stable
+in edge cases.
 
-**Background Logging**
-A lightweight background process (<32 kB RAM) writes a snapshot every 15 minutes
-so the forecast stays accurate even when the widget is closed.
+**Weekly Battery Budget**
+Plan your week, not just the next hour. Budget separate Native and Broadcast
+hours and see how much is already consumed. BatteryBudget helps you understand
+today whether your battery will still cover the training session you have
+planned for Friday.
 
-**Learning phase note:**
-During the first 24–48 hours the app shows "LEARNING" and a rough idle-only
-estimate. After ~14 days of use the forecast reaches its full accuracy.
+**Clear Visual Warnings**
+Critical range warnings switch to red immediately. Weekly budget bars clamp at
+100% and show overuse without breaking the layout.
 
-**All data stays on your watch.** No cloud, no sync, no account needed.
+**Responsive by Design**
+The interface uses mathematically scaled, relative layout logic instead of fixed
+pixel anchors, so it adapts cleanly across different Garmin display sizes.
 
----
+**Private and Efficient**
+Everything stays on your watch. No cloud, no account, no external analytics.
+The rendering and storage model are optimized for minimal self-consumption.
 
-## Keywords (for Store search optimisation)
+**Engineered for Stability**
+The alpha baseline is backed by **48 unit tests**, including extreme stress
+scenarios for low battery, budget overrun, pending broadcast events, reboot
+persistence, and zero-drain protection.
 
-1. battery life
-2. battery forecast
-3. battery planner
-4. power management
-5. energy monitor
+## Kurzbeschreibung (Deutsch, max. 80 Zeichen)
 
----
+Smarte Akku-Prognose mit Wochenbudget und lokalem Lernen direkt auf der Uhr.
 
-## Permissions
+## Beschreibung (Deutsch)
 
-| Permission | Why it is needed |
-|---|---|
-| **Background** | Periodic background snapshots for accurate learning even when the widget is closed. If denied, BatteryBudget falls back to logging only when the widget is opened. |
-| **UserProfile** | Reads sleep/wake time from the Garmin profile to improve the sleep-window drain model. |
+BatteryBudget beantwortet die Frage, die vor dem Training wirklich zaehlt:
 
----
+**Reicht mein Akku noch dann, wenn ich ihn brauche?**
 
-## Privacy
+Die App verbindet eine intelligente Akku-Prognose mit Wochenplanung und vollstaendig
+lokalem Lernen auf der Uhr.
 
-All computation and all stored data remain **on your watch**.
-BatteryBudget transmits nothing to any server or third party.
+**Smart Forecast**
+BatteryBudget trennt zwei reale Lastprofile:
 
----
+- **Native Garmin-Aktivitaeten** wie Laufen, Radfahren oder GPS-Workouts
+- **Externe HR-Broadcast-Sessions** wie Zwift oder Trainer-Einheiten, bei denen
+  keine native Aktivitaet laeuft, die Uhr aber Herzfrequenzsensor und Funk
+  trotzdem stark belastet
 
-## What's New – v1.0.0
+Durch dieses duale Modell ist die Prognose deutlich realistischer als bei einer
+einzigen Standard-Verbrauchskurve.
 
-- Initial release.
-- Adaptive drain-rate learning with EMA per state (idle / activity / sleep).
-- Sport-specific profiles: Run, Bike, Hike, Swim.
-- Solar gain estimation and forecast integration (Fenix / Epix solar models).
-- Activity Planner: What-If calculation for planned training sessions.
-- Weekly activity pattern learning (7 x 24 hourly slots).
-- Battery history chart (last 24 readings).
-- Adaptive background sampling: shorter intervals during activity/charging,
-  longer during idle/sleep to minimise battery impact.
-- Abnormal-drain detection: flags when idle rate is >50% above baseline.
-- Full localisation: German / English.
+**Confidence und EMA-Lernen**
+Die App lernt aus deinem echten Nutzungsverhalten per Exponential Moving Average
+(EMA) und ueber ein woechentliches Aktivitaetsmuster. Mit jeder bestaetigten
+Session steigt die Confidence, und die Prognose wird persoenlicher und zugleich
+robust gegen Ausreisser.
 
----
+**Wochen-Budget statt nur Tageswert**
+Plane Native- und Broadcast-Stunden getrennt und erkenne frueh, wie viel Budget
+bereits verbraucht ist. So verstehst du schon heute, ob dein Akku noch fuer das
+Training am Freitag reicht.
 
-## Supported Devices (v1.0.0)
+**Klare optische Warnsignale**
+Bei kritischer Restlaufzeit wechselt die Warnfarbe sofort auf Rot. Wochenbudgets
+werden sauber bei 100 % gedeckelt und zeigen Ueberziehung klar an.
 
-| Series | Models |
-|---|---|
-| Forerunner | 255 / 255S / 255M / 255SM, 265 / 265S, 955, 965 |
-| Fenix 7 | fenix 7 / 7S / 7X / 7 Pro / 7S Pro / 7X Pro |
-| Epix Gen 2 | epix 2 / 2 Pro 42 mm / 47 mm / 51 mm |
-| Venu / Vivoactive | Venu 2 / 2 Plus / 2S / 3 / 3S, Venu Sq 2 / 2M, vivoactive 5 |
+**Responsives Design**
+Die Oberflaeche nutzt relative, mathematisch skalierte Koordinaten statt fester
+Pixel-Anker und passt sich dadurch sauber an unterschiedliche Garmin-Displays an.
+
+**Datenschutz und Effizienz**
+Alle Daten bleiben auf der Uhr. Keine Cloud, kein Konto, keine externe Analyse.
+Rendering und Speicherung sind auf minimalen Eigenverbrauch optimiert.
+
+**Technisch abgesichert**
+Die verifizierte Alpha-Basis wird durch **48 Unit-Tests** abgesichert, darunter
+Extremfaelle fuer niedrigen Akkustand, Budget-Ueberziehung, Pending-Events,
+Reboot-Persistenz und Schutz vor Division durch Null.
+
+## Suggested Keywords
+
+- battery forecast
+- battery planner
+- zwift
+- hr broadcast
+- garmin battery

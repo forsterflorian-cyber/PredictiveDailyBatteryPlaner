@@ -43,6 +43,7 @@ module BatteryBudget {
             // Get learned rates
             var idleRate = getSafeIdleRate();
             var activityRate = getSafeActivityRate();
+            var broadcastRate = getSafeBroadcastRate();
 
             // Resolve dynamic sleep window (UserProfile > app settings > compile-time constant)
             var sleepStartHour = resolveSleepStartHour();
@@ -183,6 +184,15 @@ module BatteryBudget {
 
             var abnormalDrain = _drainLearner.isAbnormalDrain();
             var dataPointsPerProfile = _drainLearner.getProfileSampleCounts();
+            var remainingNativePlanMinutes = getRemainingPlannedMinutes(:weeklyNativeHours, :nativeUsedMin);
+            var remainingBroadcastPlanMinutes = getRemainingPlannedMinutes(:weeklyBroadcastHours, :broadcastUsedMin);
+            var remainingDaysWithPlan = Forecaster.computeRemainingDaysWithPlan(
+                nowBatt,
+                idleRate,
+                activityRate,
+                broadcastRate,
+                remainingNativePlanMinutes,
+                remainingBroadcastPlanMinutes);
 
             return {
                 :typical => endBattTypical.toNumber(),
@@ -196,6 +206,9 @@ module BatteryBudget {
                 :remainingActivityMinutes => remainingActivityMinutes,
                 :abnormalDrain => abnormalDrain,
                 :dataPointsPerProfile => dataPointsPerProfile,
+                :remainingNativePlanMinutes => remainingNativePlanMinutes,
+                :remainingBroadcastPlanMinutes => remainingBroadcastPlanMinutes,
+                :remainingDaysWithPlan => remainingDaysWithPlan,
                 :solarSuppressed => isPostCharge
             } as ForecastResult;
         }
@@ -241,7 +254,11 @@ module BatteryBudget {
                 :nextActivityDrain => base[:nextActivityDrain],
                 :remainingActivityMinutes => remainingBudget,
                 :abnormalDrain => base[:abnormalDrain],
-                :dataPointsPerProfile => base[:dataPointsPerProfile]
+                :dataPointsPerProfile => base[:dataPointsPerProfile],
+                :remainingNativePlanMinutes => base[:remainingNativePlanMinutes],
+                :remainingBroadcastPlanMinutes => base[:remainingBroadcastPlanMinutes],
+                :remainingDaysWithPlan => base[:remainingDaysWithPlan],
+                :solarSuppressed => base[:solarSuppressed]
             } as ForecastResult;
         }
         
@@ -338,7 +355,9 @@ module BatteryBudget {
                         :endBatt   => idleEndBatt,
                         :state     => STATE_IDLE,
                         :profile   => PROFILE_GENERIC,
-                        :solarW    => 0
+                        :solarW    => 0,
+                        :hrDensity => 0,
+                        :broadcastCandidate => false
                     } as Segment);
                 }
             }
@@ -356,7 +375,9 @@ module BatteryBudget {
                         :endBatt   => actEndBatt,
                         :state     => STATE_ACTIVITY,
                         :profile   => PROFILE_GENERIC,
-                        :solarW    => 0
+                        :solarW    => 0,
+                        :hrDensity => 0,
+                        :broadcastCandidate => false
                     } as Segment);
                 }
             }
@@ -394,6 +415,50 @@ module BatteryBudget {
             if (budgetMin > maxMin) { budgetMin = maxMin; }
             if (budgetMin < 0)      { budgetMin = 0; }
             return budgetMin;
+        }
+
+        private function getRemainingPlannedMinutes(settingKey as Symbol, usedKey as Symbol) as Number {
+            var settings = _storage.getSettings();
+            var hoursValue = settings[settingKey];
+            var plannedMinutes = (hoursValue instanceof Number) ? ((hoursValue as Number) * 60) : 0;
+
+            var weekly = _storage.getWeeklyPlanState();
+            var usedMinutes = weekly[usedKey] as Number;
+            return Forecaster.calculateRemainingPlannedMinutes(plannedMinutes, usedMinutes);
+        }
+
+        static function calculateRemainingPlannedMinutes(plannedMinutes as Number, usedMinutes as Number) as Number {
+            var remaining = plannedMinutes - usedMinutes;
+            if (remaining < 0) {
+                return 0;
+            }
+            return remaining;
+        }
+
+        static function computeRemainingDaysWithPlan(currentBattery as Number,
+                                                     idleRate as Float,
+                                                     nativeRate as Float,
+                                                     broadcastRate as Float,
+                                                     plannedNativeMinutes as Number,
+                                                     plannedBroadcastMinutes as Number) as Float {
+            var baselineDailyDrain = idleRate * 24.0f;
+            var plannedDrain = (plannedNativeMinutes.toFloat() / 60.0f) * nativeRate
+                             + (plannedBroadcastMinutes.toFloat() / 60.0f) * broadcastRate;
+            return Forecaster.calculateRemainingDays(currentBattery, baselineDailyDrain, plannedDrain);
+        }
+
+        static function calculateRemainingDays(currentBattery as Number,
+                                               baselineDailyDrain as Float,
+                                               plannedDrain as Float) as Float {
+            if (baselineDailyDrain <= 0.0f) {
+                return 0.0f;
+            }
+
+            var remaining = (currentBattery.toFloat() - plannedDrain) / baselineDailyDrain;
+            if (remaining < 0.0f) {
+                return 0.0f;
+            }
+            return remaining;
         }
 
         // Clamp battery to 0-100
@@ -436,6 +501,8 @@ module BatteryBudget {
         function getSimpleForecast() as ForecastResult {
             var nowBatt = getBatteryPercent();
             var idleRate = getSafeIdleRate();
+            var activityRate = getSafeActivityRate();
+            var broadcastRate = getSafeBroadcastRate();
             
             var endOfDayMinutes = _storage.getEndOfDayMinutes();
             var minutesRemaining = TimeUtil.getMinutesUntilTime(endOfDayMinutes);
@@ -466,6 +533,15 @@ module BatteryBudget {
             var riskThresholdYellow = settings[:riskThresholdYellow] as Number;
             var risk = calculateRisk(endBatt.toNumber(), riskThresholdRed, riskThresholdYellow);
             var confidence = calculateConfidence();
+            var remainingNativePlanMinutes = getRemainingPlannedMinutes(:weeklyNativeHours, :nativeUsedMin);
+            var remainingBroadcastPlanMinutes = getRemainingPlannedMinutes(:weeklyBroadcastHours, :broadcastUsedMin);
+            var remainingDaysWithPlan = Forecaster.computeRemainingDaysWithPlan(
+                nowBatt,
+                idleRate,
+                activityRate,
+                broadcastRate,
+                remainingNativePlanMinutes,
+                remainingBroadcastPlanMinutes);
             
             return {
                 :typical => endBatt.toNumber(),
@@ -479,6 +555,9 @@ module BatteryBudget {
                 :remainingActivityMinutes => 0,
                 :abnormalDrain => _drainLearner.isAbnormalDrain(),
                 :dataPointsPerProfile => _drainLearner.getProfileSampleCounts(),
+                :remainingNativePlanMinutes => remainingNativePlanMinutes,
+                :remainingBroadcastPlanMinutes => remainingBroadcastPlanMinutes,
+                :remainingDaysWithPlan => remainingDaysWithPlan,
                 :solarSuppressed => simplIsPostCharge
             } as ForecastResult;
         }
@@ -571,6 +650,16 @@ module BatteryBudget {
             return DEFAULT_RATE_ACTIVITY;
         }
 
+        private function getSafeBroadcastRate() as Float {
+            try {
+                var rate = _drainLearner.getBroadcastRate();
+                if (rate >= MIN_RATE && rate <= MAX_RATE) {
+                    return rate;
+                }
+            } catch (ex) {}
+            return DEFAULT_RATE_BROADCAST;
+        }
+
         private function getSafeProfileRate(profile as Profile, fallback as Float) as Float {
             try {
                 var rate = _drainLearner.getProfileRate(profile);
@@ -587,6 +676,7 @@ module BatteryBudget {
             return {
                 :idle => rates[:idle],
                 :activity => rates[:activityGeneric],
+                :broadcast => rates[:broadcast],
                 :run => rates[:run],
                 :bike => rates[:bike],
                 :hike => rates[:hike]

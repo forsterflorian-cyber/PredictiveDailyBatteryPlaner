@@ -27,6 +27,14 @@
             <settingConfig type="numeric" min="5" max="50" errorMessage="@Strings.SettingNumberError" />
         </setting>
 
+        <setting propertyKey="@Properties.weeklyNativeHours" title="@Strings.WeeklyNativeHoursLabel" prompt="@Strings.WeeklyNativeHoursPrompt">
+            <settingConfig type="numeric" min="0" max="40" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
+        <setting propertyKey="@Properties.weeklyBroadcastHours" title="@Strings.WeeklyBroadcastHoursLabel" prompt="@Strings.WeeklyBroadcastHoursPrompt">
+            <settingConfig type="numeric" min="0" max="40" errorMessage="@Strings.SettingNumberError" />
+        </setting>
+
         <setting propertyKey="@Properties.sleepStartHour" title="@Strings.SleepStartHourLabel" prompt="@Strings.SleepStartHourPrompt">
             <settingConfig type="numeric" min="18" max="23" errorMessage="@Strings.SettingNumberError" />
         </setting>

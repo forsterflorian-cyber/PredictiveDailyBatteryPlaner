@@ -17,6 +17,44 @@ module BatteryBudget {
         static function nowEpochMinutes() as Number {
             return momentToEpochMinutes(Time.now());
         }
+
+        // Get the local Monday 00:00 start for the week containing the given epoch minute.
+        static function getWeekStartEpochMinutes(epochMin as Number) as Number {
+            var moment = new Time.Moment(epochMin * 60);
+            var info = Gregorian.info(moment, Time.FORMAT_SHORT);
+            var dayStart = epochMin - (info.hour * 60 + info.min);
+            var dow = info.day_of_week - 1; // 0=Sunday
+            if (dow < 0) { dow = 0; }
+            if (dow > 6) { dow = 6; }
+
+            // Monday-based week key: Monday=0 offset, Sunday=6 offset.
+            var daysSinceMonday = (dow == 0) ? 6 : (dow - 1);
+            return dayStart - (daysSinceMonday * 24 * 60);
+        }
+
+        static function getWeekKey(epochMin as Number) as Number {
+            return getWeekStartEpochMinutes(epochMin);
+        }
+
+        static function getCurrentWeekKey() as Number {
+            return getWeekStartEpochMinutes(nowEpochMinutes());
+        }
+
+        static function getOverlapMinutesWithinWeek(startTMin as Number, endTMin as Number, weekKey as Number) as Number {
+            if (endTMin <= startTMin) {
+                return 0;
+            }
+
+            var weekStart = weekKey;
+            var weekEnd = weekStart + (7 * 24 * 60);
+            var overlapStart = startTMin > weekStart ? startTMin : weekStart;
+            var overlapEnd = endTMin < weekEnd ? endTMin : weekEnd;
+
+            if (overlapEnd <= overlapStart) {
+                return 0;
+            }
+            return overlapEnd - overlapStart;
+        }
         
         // Get current local time info
         static function getLocalTimeInfo() as Gregorian.Info {

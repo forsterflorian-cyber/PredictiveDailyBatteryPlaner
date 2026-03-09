@@ -9,7 +9,8 @@ module BatteryBudget {
         STATE_IDLE = 1,
         STATE_ACTIVITY = 2,
         STATE_CHARGING = 3,
-        STATE_SLEEP = 4
+        STATE_SLEEP = 4,
+        STATE_BROADCAST = 5
     }
     
     // Activity profile enum
@@ -35,7 +36,10 @@ module BatteryBudget {
         :battPct as Number,     // 0-100
         :state as State,
         :profile as Profile,
-        :solarW as Number       // solar intensity 0-100
+        :solarW as Number,      // solar intensity 0-100
+        :heartRate as Number,   // current bpm or 0 when unavailable
+        :hrDensity as Number,   // recent HR samples per hour
+        :broadcastCandidate as Boolean
     };
 
     // Segment structure
@@ -46,7 +50,9 @@ module BatteryBudget {
         :endBatt as Number,
         :state as State,
         :profile as Profile,
-        :solarW as Number       // average solar intensity during segment (0-100)
+        :solarW as Number,      // average solar intensity during segment (0-100)
+        :hrDensity as Number,   // average HR samples per hour across the segment
+        :broadcastCandidate as Boolean
     };
 
     // Forecast result
@@ -61,20 +67,42 @@ module BatteryBudget {
         :nextActivityDrain as Number or Null,
         :remainingActivityMinutes as Number,  // minutes of activity budget until target level
         :abnormalDrain as Boolean,            // true when idle rate is >50% above default
-        :dataPointsPerProfile as Dictionary   // sample counts keyed by :idle/:activityGeneric/:run etc.
+        :dataPointsPerProfile as Dictionary,  // sample counts keyed by :idle/:activityGeneric/:run etc.
+        :remainingNativePlanMinutes as Number,
+        :remainingBroadcastPlanMinutes as Number,
+        :remainingDaysWithPlan as Float,
+        :solarSuppressed as Boolean
     };
 
     // Drain rates structure
     typedef DrainRates as {
         :idle as Float,
         :activityGeneric as Float,
+        :broadcast as Float,
         :run as Float or Null,
         :bike as Float or Null,
         :hike as Float or Null,
         :swim as Float or Null,
         :sampleCounts as Dictionary<Symbol, Number>,
         :solarGain as Float,              // %/h gained per unit solar intensity (0.0-1.0)
-        :recentSolar as Number            // recent average solar intensity (0-100)
+        :recentSolar as Number,           // recent average solar intensity (0-100)
+        :hrDensityIdle as Float           // baseline HR history density during real idle periods
+    };
+
+    typedef WeeklyPlanState as {
+        :weekKey as Number,
+        :nativeUsedMin as Number,
+        :broadcastUsedMin as Number
+    };
+
+    typedef PendingBroadcastEvent as {
+        :startTMin as Number,
+        :endTMin as Number,
+        :durationMin as Number,
+        :battDrop as Number,
+        :drainRate as Float,
+        :weekKey as Number,
+        :hrDensity as Number
     };
     
     // Constants
@@ -92,7 +120,9 @@ module BatteryBudget {
     // Default drain rates (%/h) - conservative estimates for FR955
     const DEFAULT_RATE_IDLE = 0.8f;           // ~5 days standby
     const DEFAULT_RATE_ACTIVITY = 8.0f;       // ~12h GPS activity
+    const DEFAULT_RATE_BROADCAST = 3.2f;      // HR broadcast with wireless links, no GPS
     const DEFAULT_RATE_SLEEP = 0.5f;
+    const DEFAULT_HR_DENSITY_IDLE = 6.0f;     // sparse all-day HR sampling baseline
 
     // Rate bounds for sanity checking
     const MIN_RATE = 0.1f;

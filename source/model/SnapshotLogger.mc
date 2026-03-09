@@ -17,8 +17,12 @@ module BatteryBudget {
         function takeSnapshot() as Snapshot {
             var tMin = TimeUtil.nowEpochMinutes();
             var battPct = getBatteryPercent();
-            var state = detectCurrentState();
-            var profile = detectCurrentProfile(state);
+            var activityInfo = getActivityInfoSafe();
+            var isNativeActivity = hasNativeActivityStarted(activityInfo);
+            var detector = new BroadcastDetector();
+            var hrContext = detector.captureHeartRateContext();
+            var state = detectCurrentState(isNativeActivity);
+            var profile = detectCurrentProfile(state, activityInfo);
             var solarW = getSolarIntensity();
 
             var snapshot = {
@@ -26,7 +30,10 @@ module BatteryBudget {
                 :battPct => battPct,
                 :state => state,
                 :profile => profile,
-                :solarW => solarW
+                :solarW => solarW,
+                :heartRate => hrContext[:heartRate] as Number,
+                :hrDensity => hrContext[:hrDensity] as Number,
+                :broadcastCandidate => (!isNativeActivity) && (hrContext[:broadcastCandidate] as Boolean)
             } as Snapshot;
 
             return snapshot;
@@ -92,14 +99,14 @@ module BatteryBudget {
         }
         
         // Detect current state based on available APIs
-        private function detectCurrentState() as State {
+        private function detectCurrentState(isNativeActivity as Boolean) as State {
             // Check if device is charging
             if (isCharging()) {
                 return STATE_CHARGING;
             }
             
             // Check if in activity
-            if (isInActivity()) {
+            if (isNativeActivity) {
                 return STATE_ACTIVITY;
             }
             
@@ -125,31 +132,38 @@ module BatteryBudget {
         }
         
         // Check if currently in an activity
-        private function isInActivity() as Boolean {
+        private function hasNativeActivityStarted(info) as Boolean {
+            if (info == null) {
+                return false;
+            }
+
             try {
-                // Method 1: Check Activity.getActivityInfo()
-                var info = Activity.getActivityInfo();
-                if (info != null) {
-                    // If we have activity info with elapsed time, we're in an activity
-                    if (info has :elapsedTime && info.elapsedTime != null && info.elapsedTime > 0) {
-                        return true;
-                    }
+                if (info has :startTime && info.startTime != null) {
+                    return true;
                 }
+                if (info has :elapsedTime && info.elapsedTime != null && info.elapsedTime > 0) {
+                    return true;
+                }
+            } catch (ex) {}
+            return false;
+        }
+
+        private function getActivityInfoSafe() {
+            try {
+                return Activity.getActivityInfo();
             } catch (ex) {
                 // API not available or not in activity
             }
-            
-            return false;
+            return null;
         }
         
         // Detect activity profile if in activity
-        private function detectCurrentProfile(state as State) as Profile {
+        private function detectCurrentProfile(state as State, info) as Profile {
             if (state != STATE_ACTIVITY) {
                 return PROFILE_GENERIC;
             }
             
             try {
-                var info = Activity.getActivityInfo();
                 if (info != null && info has :sport) {
                     var sport = info.sport;
                     if (sport != null) {
@@ -194,12 +208,12 @@ module BatteryBudget {
         // Return an adaptive sample interval (minutes) based on the current state.
         // Active/charging sessions get shorter intervals for accurate drain curves;
         // idle/sleep get longer intervals to reduce background power consumption.
-        function getAdaptiveInterval(state as State) as Number {
+        function getAdaptiveInterval(state as State, broadcastCandidate as Boolean) as Number {
             var settings = _storage.getSettings();
             var base = settings[:sampleIntervalMin];
             var baseMin = (base instanceof Number) ? base as Number : 15;
 
-            if (state == STATE_ACTIVITY || state == STATE_CHARGING) {
+            if (state == STATE_ACTIVITY || state == STATE_BROADCAST || state == STATE_CHARGING || broadcastCandidate) {
                 // High-change states: sample at half the base interval, min 5 min
                 var fast = baseMin / 2;
                 return fast < 5 ? 5 : fast;
