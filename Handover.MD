@@ -1,29 +1,22 @@
 ==============================================================================
-HANDOVER: BatteryPlaner (Alpha-Abschluss)
+PROJECT CONTEXT & HANDOVER
 ==============================================================================
+Target Platform: Garmin Connect IQ (Monkey C)
+Current Status: Alpha-Completion (v1.0.0-alpha)
 
 ### STATUS QUO
 - 48 Unit Tests: PASS (100%)
-- Build: FR955 und Vivoactive4 erfolgreich
-- Release-Ready fuer Alpha-Phase
+- Build: FR955 and Vivoactive4 SUCCESSFUL
+- UI: Fully transitioned to Relative Design (H/W factors).
 
-### KEY FEATURES & ARCHITEKTUR
-- Relative Design: Koordinaten basieren auf H/W-Faktoren.
-- Hybrid Detection: HR-Signal + Drain-Spike Validierung.
-- Forecaster: Dual-Modell mit EMA-Glaettung.
-- Dictionary-Params: UI-Renderer nutzen Dictionaries, um das 9-Argumente-
-  Limit von Monkey C (besonders auf Vivoactive4) zu umgehen.
-
-### TEST SUITE (StressTests.mc)
-- Chaos-Fall: 5% Akku + Budget-Ueberzug + 120min Event = STABIL.
-- Persistence: Pending-Events ueberleben Neustart.
-
-### KNOWN ISSUES / WARNINGS
-- Icon Scaling: 100x100 Icon wird auf Vivoactive4 (35x35) herunterskaliert.
-- Glance Support: :glance Annotationen werden auf Legacy-Hardware ignoriert.
+### KEY ARCHITECTURE
+- Relative Design: UI scaling via H/W factors (centerY anchor).
+- Dictionary-Params: Bypassing the 9-argument limit on legacy devices.
+- Safety: Zero-division protection and state persistence verified.
+- Detection: Hybrid (HR signal + Drain spike validation).
 
 ### BACKLOG
-- Beta-Feldtest am Handgelenk.
-- Confidence Metric zur Datenreife.
-- Haptisches Feedback bei kritischer Reichweite.
+- [ ] Field testing (EMA validation at wrist)
+- [ ] Confidence Metric visualization (Data maturity)
+- [ ] Haptic alerts for range < 2.0 days
 ==============================================================================
