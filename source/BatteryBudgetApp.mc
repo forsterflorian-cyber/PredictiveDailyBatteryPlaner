@@ -17,7 +17,7 @@ class BatteryBudgetApp extends Application.AppBase {
         // Keep startup light on low-memory devices.
         BatteryBudget.StorageManager.getInstance();
         resetLearnedDataIfRequested();
-        registerBackgroundEvents();
+        bootstrapBackgroundEventsIfNeeded();
     }
 
     function onStop(state as Dictionary?) as Void {
@@ -57,8 +57,12 @@ class BatteryBudgetApp extends Application.AppBase {
         }
     }
 
-    private function registerBackgroundEvents() as Void {
+    private function bootstrapBackgroundEventsIfNeeded() as Void {
         try {
+            if (Background.getLastTemporalEventTime() != null) {
+                return;
+            }
+
             var settings = BatteryBudget.StorageManager.getInstance().getSettings();
             var intervalMin = settings[:sampleIntervalMin];
             if (intervalMin == null || !(intervalMin instanceof Number)) {
@@ -70,19 +74,7 @@ class BatteryBudgetApp extends Application.AppBase {
             if (interval < 5) { interval = 5; }
 
             var duration = new Time.Duration(interval * 60);
-            var now = Time.now();
-            var lastTime = Background.getLastTemporalEventTime();
-            // Default: schedule from now. Override with lastTime-relative
-            // scheduling when available and result is still in the future.
-            var nextTime = now.add(duration) as Time.Moment;
-            if (lastTime != null) {
-                var candidate = lastTime.add(duration) as Time.Moment;
-                if (candidate.value() > now.value()) {
-                    nextTime = candidate;
-                }
-            }
-
-            Background.registerForTemporalEvent(nextTime);
+            Background.registerForTemporalEvent(Time.now().add(duration) as Time.Moment);
         } catch (ex) {
             // Background not supported or permission denied
         }
@@ -91,7 +83,7 @@ class BatteryBudgetApp extends Application.AppBase {
     function onSettingsChanged() as Void {
         BatteryBudget.StorageManager.getInstance().reloadSettings();
         resetLearnedDataIfRequested();
-        registerBackgroundEvents();
+        bootstrapBackgroundEventsIfNeeded();
         WatchUi.requestUpdate();
     }
 }

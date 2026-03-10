@@ -1,13 +1,14 @@
 import Toybox.Lang;
 import Toybox.System;
 import Toybox.Time;
-import Toybox.UserProfile;
 import Toybox.WatchUi;
 
 module BatteryBudget {
     
     class Forecaster {
         
+        private static var _sharedInstance as Forecaster?;
+
         private var _storage as StorageManager;
         private var _drainLearner as DrainLearner;
         private var _patternLearner as PatternLearner;
@@ -23,6 +24,17 @@ module BatteryBudget {
             _patternLearner = new PatternLearner();
             _backfillGapIfNeeded();
         }
+
+        static function getSharedInstance() as Forecaster {
+            if (_sharedInstance == null) {
+                _sharedInstance = new Forecaster();
+            }
+            return _sharedInstance as Forecaster;
+        }
+
+        function getDisplayForecast() as ForecastResult {
+            return hasMinimumConfidence() ? forecast() : getSimpleForecast();
+        }
         
         // Generate forecast for end of day
         function forecast() as ForecastResult {
@@ -31,23 +43,22 @@ module BatteryBudget {
             // Get current state - one call to getLocalTimeInfo() covers slot, weekday, and partial-slot math
             var nowBatt = getBatteryPercent();
             var localInfo = TimeUtil.getLocalTimeInfo();
+            var nowMinutes = TimeUtil.getMinutesSinceMidnight(localInfo);
             var weekday = localInfo.day_of_week - 1;
             if (weekday < 0) { weekday = 0; }
             if (weekday > 6) { weekday = 6; }
             var currentSlot = TimeUtil.getSlotIndex(localInfo.hour, localInfo.min);
-            // With 60-min slots, remaining = full minutes left in the current hour
-            var remainingInCurrentSlot = SLOT_DURATION_MIN - localInfo.min;
             var endOfDayMinutes = _storage.getEndOfDayMinutes();
-            var endOfDaySlot = TimeUtil.getEndOfDaySlot(endOfDayMinutes);
+            var endOfDaySlotRangeEnd = TimeUtil.getEndOfDaySlotRangeEnd(endOfDayMinutes);
+            var remainingMinutes = endOfDayMinutes - nowMinutes;
+            if (remainingMinutes < 0) {
+                remainingMinutes = 0;
+            }
 
             // Get learned rates
             var idleRate = getSafeIdleRate();
             var activityRate = getSafeActivityRate();
             var broadcastRate = getSafeBroadcastRate();
-
-            // Resolve dynamic sleep window (UserProfile > app settings > compile-time constant)
-            var sleepStartHour = resolveSleepStartHour();
-            var sleepEndHour   = resolveSleepEndHour();
 
             // Read target level from settings (default: compile-time constant)
             var targetLevelSetting = settings[:targetLevel];
@@ -65,9 +76,12 @@ module BatteryBudget {
             var totalDrainTypical = 0.0f;
             var solarMinutesRemaining = 0;
 
-            if (currentSlot < endOfDaySlot) {
-                for (var slot = currentSlot; slot < endOfDaySlot && slot < SLOTS_PER_DAY; slot++) {
-                    var slotDurationMin = (slot == currentSlot) ? remainingInCurrentSlot : SLOT_DURATION_MIN;
+            if (remainingMinutes > 0) {
+                for (var slot = currentSlot; slot < SLOTS_PER_DAY; slot++) {
+                    var slotDurationMin = TimeUtil.getSlotOverlapMinutes(slot, nowMinutes, endOfDayMinutes);
+                    if (slotDurationMin <= 0) {
+                        continue;
+                    }
                     solarMinutesRemaining += slotDurationMin;
 
                     var expectedActivityMin = _patternLearner.getExpectedActivityMinutes(weekday, slot);
@@ -84,11 +98,11 @@ module BatteryBudget {
                     }
 
                     // Sleep-window: apply reduced idle rate when no significant activity is expected.
-                    // Uses dynamically resolved hours (UserProfile > settings > constants).
+                    // Uses the shared sleep-window source (UserProfile > settings > constants).
                     // Pattern data takes priority: if the user habitually trains at night (e.g.
                     // night shift), learned activity minutes override the sleep discount.
                     var effectiveIdleRate = idleRate;
-                    var isSleepSlot = (slot >= sleepStartHour || slot < sleepEndHour);
+                    var isSleepSlot = TimeUtil.isWithinSleepWindow(slot, settings);
                     if (isSleepSlot && expectedActivityMin < 15) {
                         effectiveIdleRate = DEFAULT_RATE_SLEEP;
                     }
@@ -146,7 +160,7 @@ module BatteryBudget {
             var confidence = calculateConfidence();
             
             // Find next activity window
-            var nextWindow = _patternLearner.findNextActivityWindow(weekday, currentSlot, endOfDaySlot);
+            var nextWindow = _patternLearner.findNextActivityWindow(weekday, currentSlot, endOfDaySlotRangeEnd);
             var nextActivityTime = null;
             var nextActivityDuration = null;
             var nextActivityDrain = null;
@@ -180,7 +194,7 @@ module BatteryBudget {
 
             var remainingActivityMinutes = calculateActivityBudget(
                 nowBatt.toFloat(), totalDrainTypical, effectiveExtraPerHour,
-                targetLevelVal, endOfDaySlot, currentSlot);
+                targetLevelVal, remainingMinutes);
 
             var abnormalDrain = _drainLearner.isAbnormalDrain();
             var dataPointsPerProfile = _drainLearner.getProfileSampleCounts();
@@ -218,7 +232,7 @@ module BatteryBudget {
         // The extra drain = (profileRate - idleRate) × durationMinutes / 60,
         // because the activity replaces idle time that would have been spent anyway.
         function forecastWithPlannedActivity(profile as Profile, durationMinutes as Number) as ForecastResult {
-            var base = hasMinimumConfidence() ? forecast() : getSimpleForecast();
+            var base = getDisplayForecast();
 
             var idleRate = getSafeIdleRate();
             var profileRate = getSafeProfileRate(profile, getSafeActivityRate());
@@ -389,9 +403,8 @@ module BatteryBudget {
         private function calculateActivityBudget(nowBatt as Float, totalDrain as Float,
                                                  effectiveExtraPerHour as Float,
                                                  targetLevel as Number,
-                                                 endSlot as Number, currentSlot as Number) as Number {
-            var remainingSlots = endSlot - currentSlot;
-            if (remainingSlots <= 0) {
+                                                 remainingMinutes as Number) as Number {
+            if (remainingMinutes <= 0) {
                 return 0;
             }
 
@@ -400,7 +413,7 @@ module BatteryBudget {
                 return 0;
             }
 
-            var maxMin = remainingSlots * SLOT_DURATION_MIN;
+            var maxMin = remainingMinutes;
             if (effectiveExtraPerHour <= 0.0f) {
                 return maxMin;
             }
@@ -578,38 +591,6 @@ module BatteryBudget {
         
         // Resolve sleep-window start hour.
         // Priority: UserProfile (if device exposes sleepTime as Duration) → app Setting → constant.
-        private function resolveSleepStartHour() as Number {
-            try {
-                var profile = UserProfile.getProfile();
-                if (profile has :sleepTime) {
-                    var st = profile.sleepTime;
-                    if (st instanceof Time.Duration) {
-                        // Duration.value() = seconds; convert to hour-of-day
-                        return ((st as Time.Duration).value() / 3600).toNumber();
-                    }
-                }
-            } catch (ex) {}
-            var settings = _storage.getSettings();
-            var h = settings[:sleepStartHour];
-            return (h instanceof Number) ? h as Number : SLEEP_START_HOUR;
-        }
-
-        // Resolve sleep-window end hour (wake time).
-        private function resolveSleepEndHour() as Number {
-            try {
-                var profile = UserProfile.getProfile();
-                if (profile has :wakeTime) {
-                    var wt = profile.wakeTime;
-                    if (wt instanceof Time.Duration) {
-                        return ((wt as Time.Duration).value() / 3600).toNumber();
-                    }
-                }
-            } catch (ex) {}
-            var settings = _storage.getSettings();
-            var h = settings[:sleepEndHour];
-            return (h instanceof Number) ? h as Number : SLEEP_END_HOUR;
-        }
-
         // Get current battery for display
         function getCurrentBattery() as Number {
             return getBatteryPercent();

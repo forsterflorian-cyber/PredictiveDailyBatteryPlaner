@@ -112,6 +112,6 @@
     <string id="MinTypical">min typical</string>
 
     <!-- History / Trend page -->
-    <string id="HistoryTitle">Battery History</string>
-    <string id="SolarGain24h">Solar 24h</string>
+    <string id="HistoryTitle">Battery Trend</string>
+    <string id="SolarGain24h">Solar Est.</string>
 </strings>

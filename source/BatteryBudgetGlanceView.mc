@@ -3,24 +3,12 @@ import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.System;
 import Toybox.Time;
-import Toybox.Time.Gregorian;
 import Toybox.Application.Storage;
-import Toybox.Application.Properties;
 
 (:glance)
 class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
-    private const SLOTS_PER_DAY = 24;
-    private const SLOT_DURATION_MIN = 60;
-
     private const DEFAULT_END_OF_DAY = "22:00";
-    private const DEFAULT_IDLE_RATE = 0.8f; // %/h
-    private const DEFAULT_ACTIVITY_RATE = 8.0f; // %/h
-
-    private const DEFAULT_CONSERVATIVE_FACTOR = 1.2f;
-
-    private const DEFAULT_RISK_YELLOW = 30;
-    private const DEFAULT_RISK_RED = 15;
     private const ALERT_COLOR_HIGH_DRAIN = 0xFF6600;
     private const ALERT_COLOR_LOW_BUDGET = 0xFFB000;
     private const BUDGET_COLOR_OK = 0x3399FF;
@@ -49,7 +37,6 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
 
     private var _nowBatt as Number = 50;
     private var _typicalBatt as Number? = null;
-    private var _consBatt as Number? = null;
 
     private var _riskLabel as String? = null;
     private var _riskColor as Number = Graphics.COLOR_WHITE;
@@ -184,7 +171,6 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
     private function updateData() as Void {
         _nowBatt = getBatteryPercent();
         _typicalBatt = null;
-        _consBatt = null;
 
         _riskLabel = null;
         _riskColor = Graphics.COLOR_WHITE;
@@ -194,203 +180,39 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         _daysCollected = getDaysCollected();
 
         try {
-            _endOfDayLabel = readStringProperty("endOfDayTime", DEFAULT_END_OF_DAY);
-            var endOfDayMin = parseTimeString(_endOfDayLabel);
+            var forecaster = BatteryBudget.Forecaster.getSharedInstance();
+            var forecast = forecaster.getDisplayForecast();
+            _daysCollected = forecaster.getDaysCollected();
 
-            var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
-            var weekday = (info.day_of_week - 1);
-            if (weekday < 0) { weekday = 0; }
-            if (weekday > 6) { weekday = 6; }
+            var endOfDayMin = BatteryBudget.StorageManager.getInstance().getEndOfDayMinutes();
+            _endOfDayLabel = BatteryBudget.TimeUtil.formatTime(
+                (endOfDayMin / 60).toNumber(),
+                (endOfDayMin % 60).toNumber());
 
-            var currentSlot = slotIndex(info.hour, info.min);
-            var endOfDayHour = (endOfDayMin / 60).toNumber();
-            var endOfDayMinute = (endOfDayMin % 60).toNumber();
-            var endOfDaySlot = slotIndex(endOfDayHour, endOfDayMinute);
+            _typicalBatt = forecast[:typical] as Number;
+            _budgetMin = forecast[:remainingActivityMinutes] as Number;
+            _abnormalDrain = (forecast[:abnormalDrain] == true);
 
-            if (endOfDaySlot < currentSlot) {
-                endOfDaySlot = currentSlot;
-            }
-            if (endOfDaySlot >= SLOTS_PER_DAY) {
-                endOfDaySlot = SLOTS_PER_DAY - 1;
-            }
-
-            var idleRate = readDrainRate("i", :idle, DEFAULT_IDLE_RATE);
-            var activityRate = readDrainRate("a", :activityGeneric, DEFAULT_ACTIVITY_RATE);
-
-            var conservativeFactor = readFactorProperty("conservativeFactor", DEFAULT_CONSERVATIVE_FACTOR, 1.0f, 2.0f);
-
-            // The current slot may be partially elapsed - only count remaining minutes.
-            // With 60-min slots, remaining = minutes left in the current hour.
-            var remainingInCurrentSlot = SLOT_DURATION_MIN - info.min;
-
-            var totalDrainTypical = 0.0f;
-            var solarMinRemaining = 0;
-
-            var patternFlat = tryLoadPatternFlat();
-            for (var slot = currentSlot; slot < endOfDaySlot; slot++) {
-                var slotDurationMin = (slot == currentSlot) ? remainingInCurrentSlot : SLOT_DURATION_MIN;
-                solarMinRemaining += slotDurationMin;
-
-                var expectedActivityMin = 0;
-                if (patternFlat != null) {
-                    expectedActivityMin = (patternFlat as Array<Number>)[weekday * SLOTS_PER_DAY + slot];
-                }
-
-                // Scale proportionally when the slot is only partially remaining
-                if (slotDurationMin < SLOT_DURATION_MIN) {
-                    expectedActivityMin = (expectedActivityMin * slotDurationMin / SLOT_DURATION_MIN);
-                }
-                var expectedIdleMin = slotDurationMin - expectedActivityMin;
-                if (expectedIdleMin < 0) {
-                    expectedIdleMin = 0;
-                    expectedActivityMin = slotDurationMin;
-                }
-
-                var slotDrain =
-                    (expectedActivityMin.toFloat() / 60.0f) * activityRate +
-                    (expectedIdleMin.toFloat() / 60.0f) * idleRate;
-
-                totalDrainTypical += slotDrain;
-            }
-
-            // Solar gain correction
-            var solarBonusTypical = 0.0f;
-            var drDict = Storage.getValue("dr");
-            if (drDict != null && drDict instanceof Dictionary) {
-                var d = drDict as Dictionary;
-                var sgv = d.hasKey("sg") ? d["sg"] : null;
-                var rsv = d.hasKey("rs") ? d["rs"] : null;
-                if (sgv != null && rsv != null && rsv instanceof Number) {
-                    var sgRate = (sgv instanceof Float) ? sgv as Float : (sgv as Number).toFloat();
-                    var recentSol = rsv as Number;
-                    if (recentSol > 10) {
-                        var solarFraction = recentSol.toFloat() / 100.0f;
-                        var totalGain = sgRate * solarFraction * solarMinRemaining.toFloat() / 60.0f;
-                        solarBonusTypical = totalGain * 0.5f;
-                    }
-                }
-            }
-
-            var endTypical = clampBattery(_nowBatt.toFloat() - totalDrainTypical + solarBonusTypical);
-            var endCons = clampBattery(_nowBatt.toFloat() - (totalDrainTypical * conservativeFactor));
-
-            _typicalBatt = roundPct(endTypical);
-            _consBatt = roundPct(endCons);
-
-            var yellow = readNumberProperty("riskThresholdYellow", DEFAULT_RISK_YELLOW);
-            var red = readNumberProperty("riskThresholdRed", DEFAULT_RISK_RED);
-
-            var riskBatt = _consBatt as Number;
-            if (riskBatt < red) {
-                _riskLabel = RISK_CODE_HIGH;
-                _riskColor = 0xFF0000;
-            } else if (riskBatt < yellow) {
-                _riskLabel = RISK_CODE_MEDIUM;
-                _riskColor = 0xFFFF00;
-            } else {
-                _riskLabel = RISK_CODE_LOW;
-                _riskColor = 0x00FF00;
-            }
-
-            // Activity Budget (inline, mirrors Forecaster logic)
-            var targetLevel = readNumberProperty("targetLevel", 15);
-            var extraPerHour = activityRate - idleRate;
-            if (extraPerHour > 0.0f) {
-                var headroom = _nowBatt.toFloat() - totalDrainTypical - targetLevel.toFloat();
-                if (headroom > 0.0f) {
-                    var budgetCalc = (headroom / (extraPerHour / 60.0f)).toNumber();
-                    var maxMin = (endOfDaySlot - currentSlot) * SLOT_DURATION_MIN;
-                    if (budgetCalc > maxMin) { budgetCalc = maxMin; }
-                    _budgetMin = budgetCalc;
-                }
-            }
-
-            // Abnormal drain: idle rate more than 50% above default
-            _abnormalDrain = (idleRate > DEFAULT_IDLE_RATE * 1.5f);
+            var risk = forecast[:risk] as BatteryBudget.RiskLevel;
+            _riskLabel = riskLevelToCode(risk);
+            _riskColor = BatteryBudget.Forecaster.riskToColor(risk);
 
         } catch (ex) {
             // Keep fallback values
         }
     }
 
-    // One slot per hour; minute parameter kept for call-site compatibility.
-    private function slotIndex(hour as Number, minute as Number) as Number {
-        return hour;
-    }
-
-    private function readStringProperty(key as String, defaultValue as String) as String {
-        try {
-            var v = Properties.getValue(key);
-            if (v instanceof String) { return v as String; }
-        } catch (ex) {
+    private function riskLevelToCode(risk as BatteryBudget.RiskLevel) as String {
+        switch (risk) {
+            case BatteryBudget.RISK_HIGH:
+                return RISK_CODE_HIGH;
+            case BatteryBudget.RISK_MEDIUM:
+                return RISK_CODE_MEDIUM;
+            case BatteryBudget.RISK_LOW:
+                return RISK_CODE_LOW;
+            default:
+                return RISK_CODE_LOW;
         }
-        return defaultValue;
-    }
-
-    private function readNumberProperty(key as String, defaultValue as Number) as Number {
-        try {
-            var v = Properties.getValue(key);
-            if (v instanceof Number) { return v as Number; }
-        } catch (ex) {
-        }
-        return defaultValue;
-    }
-
-    private function readFactorProperty(key as String, defaultValue as Float, minVal as Float, maxVal as Float) as Float {
-        var factor = defaultValue;
-        try {
-            var v = Properties.getValue(key);
-            if (v instanceof Float) { factor = v as Float; }
-            else if (v instanceof Number) { factor = (v as Number).toFloat(); }
-        } catch (ex) {
-        }
-
-        // Backward compatibility: older versions stored factors as integer percentages (e.g., 120 -> 1.2)
-        if (factor > 10.0f) { factor = factor / 100.0f; }
-
-        if (factor < minVal) { factor = minVal; }
-        if (factor > maxVal) { factor = maxVal; }
-        return factor;
-    }
-
-    private function readDrainRate(shortKey as String, legacyKey as Symbol, defaultRate as Float) as Float {
-        try {
-            var data = Storage.getValue("dr");
-            if (data != null && data instanceof Dictionary) {
-                var dict = data as Dictionary;
-
-                // Current format (v1.0.0+): short keys
-                if (dict.hasKey(shortKey)) {
-                    var v1 = dict[shortKey];
-                    if (v1 instanceof Float) { return v1 as Float; }
-                    if (v1 instanceof Number) { return (v1 as Number).toFloat(); }
-                }
-
-                // Legacy format: symbol keys
-                if (dict.hasKey(legacyKey)) {
-                    var v2 = dict[legacyKey];
-                    if (v2 instanceof Float) { return v2 as Float; }
-                    if (v2 instanceof Number) { return (v2 as Number).toFloat(); }
-                }
-            }
-        } catch (ex) {
-        }
-        return defaultRate;
-    }
-
-    // Returns the full flat pattern array (7*SLOTS_PER_DAY elements), or null if unavailable/wrong format.
-    private function tryLoadPatternFlat() as Array<Number>? {
-        try {
-            var data = Storage.getValue("pat");
-            if (data instanceof Array) {
-                var arr = data as Array;
-                if (arr.size() == 7 * SLOTS_PER_DAY && arr[0] instanceof Number) {
-                    return arr as Array<Number>;
-                }
-            }
-        } catch (ex) {
-        }
-        return null;
     }
 
     private function getDaysCollected() as Number {
@@ -422,55 +244,6 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
             return stats.battery.toNumber();
         }
         return 50;
-    }
-
-    private function clampBattery(value as Float) as Float {
-        if (value < 0.0f) { return 0.0f; }
-        if (value > 100.0f) { return 100.0f; }
-        return value;
-    }
-
-    private function roundPct(value as Float) as Number {
-        return (value + 0.5f).toNumber();
-    }
-
-    // Parse HH:MM into minutes since midnight
-    private function parseTimeString(timeStr as String) as Number {
-        try {
-            var parts = splitString(timeStr, ":");
-            if (parts.size() >= 2) {
-                var hour = parts[0].toNumber();
-                var minute = parts[1].toNumber();
-
-                if (hour != null && minute != null && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
-                    return hour * 60 + minute;
-                }
-            }
-        } catch (ex) {
-        }
-        return 22 * 60;
-    }
-
-    private function splitString(str as String, delimiter as String) as Array<String> {
-        var result = [] as Array<String>;
-        if (delimiter.length() == 0) {
-            result.add(str);
-            return result;
-        }
-        var current = "";
-        var chars = str.toCharArray();
-        var delimChar = delimiter.toCharArray()[0];
-
-        for (var i = 0; i < chars.size(); i++) {
-            if (chars[i] == delimChar) {
-                result.add(current);
-                current = "";
-            } else {
-                current = current + chars[i].toString();
-            }
-        }
-        result.add(current);
-        return result;
     }
 
     private function getLeftInset(width as Number) as Number {

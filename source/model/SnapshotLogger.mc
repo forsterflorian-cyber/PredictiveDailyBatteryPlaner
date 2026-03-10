@@ -199,10 +199,7 @@ module BatteryBudget {
         
         // Simple sleep time heuristic (rough)
         private function isSleepTime() as Boolean {
-            var info = TimeUtil.getLocalTimeInfo();
-            var hour = info.hour;
-            // Consider 23:00 - 06:00 as potential sleep time
-            return (hour >= 23 || hour < 6);
+            return TimeUtil.isSleepTime(_storage.getSettings());
         }
         
         // Return an adaptive sample interval (minutes) based on the current state.

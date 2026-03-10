@@ -15,20 +15,14 @@ module BatteryBudget {
         function processSnapshotPair(prev as Snapshot, curr as Snapshot) as Void {
             var gap = (curr[:tMin] as Number) - (prev[:tMin] as Number);
 
-            // ── Time-integrity guards ────────────────────────────────────────────────
-            // Backward or zero-gap: clock correction (GPS sync, DST fall-back) or
-            // duplicate snapshot.  Epoch-minute data in the current in-progress segment
-            // may already be based on the wrong (fast) clock, so discard it entirely
-            // without learning and wait for a fresh forward-going pair.
+            // Backward or zero-gap: clock correction, duplicate snapshot, or stale data.
             if (gap <= 0) {
                 _storage.setCurrentSegment(null);
                 return;
             }
 
-            // Large forward gap: device was off, rebooted, or had a GPS-sync jump that
-            // advanced the clock by more than MAX_LEARNING_GAP_MIN.  The interval
-            // prev→curr is invalid for learning, but the in-progress segment up to
-            // `prev` was recorded before the jump and its data is valid – finalise it.
+            // Large forward gap: the interval itself is invalid for learning, but any
+            // previously accumulated segment up to `prev` is still valid and should be finalized.
             if (gap > MAX_LEARNING_GAP_MIN) {
                 var existing = _storage.getCurrentSegment();
                 if (existing != null) {
@@ -37,28 +31,16 @@ module BatteryBudget {
                 _storage.setCurrentSegment(null);
                 return;
             }
-            // ────────────────────────────────────────────────────────────────────────
 
             var currentSegment = _storage.getCurrentSegment();
-            var shouldCreateNew = (currentSegment == null);
+            var boundaryChanged = hasBoundaryChange(prev, curr);
+            var shouldCreateNew = (currentSegment == null) || boundaryChanged;
 
-            if (currentSegment != null) {
-                // State or profile change (also covers charging transitions)
-                if (prev[:state] != curr[:state] || prev[:profile] != curr[:profile]) {
+            if (currentSegment != null && !shouldCreateNew) {
+                // Segment duration cap (> 4 hours -> split for accuracy)
+                var potentialDuration = (curr[:tMin] as Number) - (currentSegment[:startTMin] as Number);
+                if (potentialDuration > 240) {
                     shouldCreateNew = true;
-                }
-
-                // Split idle/sleep periods when the HR-broadcast signature changes.
-                if (!shouldCreateNew && (prev[:broadcastCandidate] != curr[:broadcastCandidate])) {
-                    shouldCreateNew = true;
-                }
-
-                // Segment duration cap (> 4 hours → split for accuracy)
-                if (!shouldCreateNew) {
-                    var potentialDuration = (curr[:tMin] as Number) - (currentSegment[:startTMin] as Number);
-                    if (potentialDuration > 240) {
-                        shouldCreateNew = true;
-                    }
                 }
             }
 
@@ -67,22 +49,20 @@ module BatteryBudget {
                     finalizeSegment(currentSegment as Segment, prev);
                 }
 
-                // Start new segment representing the interval prev→curr
-                var newSegment = {
-                    :startTMin => prev[:tMin],
-                    :endTMin => curr[:tMin],
-                    :startBatt => prev[:battPct],
-                    :endBatt => curr[:battPct],
-                    :state => curr[:state],
-                    :profile => curr[:profile],
-                    :solarW => ((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2,
-                    :hrDensity => ((prev[:hrDensity] as Number) + (curr[:hrDensity] as Number)) / 2,
-                    :broadcastCandidate => (prev[:broadcastCandidate] as Boolean) || (curr[:broadcastCandidate] as Boolean)
-                } as Segment;
+                // Transition pairs are ambiguous: we do not know when the change happened
+                // within prev->curr, so seed the new state at `curr` and only learn from
+                // the next stable interval instead of mislabeling the whole gap.
+                var newSegment = boundaryChanged
+                    ? createSeedSegment(curr)
+                    : createStableIntervalSegment(prev, curr);
                 _storage.setCurrentSegment(newSegment);
             } else {
                 // Extend current segment (new object to avoid mutating cached reference)
                 var seg = currentSegment as Segment;
+                var existingDuration = (seg[:endTMin] as Number) - (seg[:startTMin] as Number);
+                var intervalDuration = (curr[:tMin] as Number) - (seg[:endTMin] as Number);
+                var intervalSolar = (((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2);
+                var intervalHrDensity = (((prev[:hrDensity] as Number) + (curr[:hrDensity] as Number)) / 2);
                 var extendedSegment = {
                     :startTMin => seg[:startTMin],
                     :endTMin => curr[:tMin],
@@ -90,27 +70,86 @@ module BatteryBudget {
                     :endBatt => curr[:battPct],
                     :state => seg[:state],
                     :profile => seg[:profile],
-                    :solarW => ((seg[:solarW] as Number) + (curr[:solarW] as Number)) / 2,
-                    :hrDensity => ((seg[:hrDensity] as Number) + (curr[:hrDensity] as Number)) / 2,
+                    :solarW => mergeDurationWeightedAverage(
+                        seg[:solarW] as Number,
+                        existingDuration,
+                        intervalSolar,
+                        intervalDuration),
+                    :hrDensity => mergeDurationWeightedAverage(
+                        seg[:hrDensity] as Number,
+                        existingDuration,
+                        intervalHrDensity,
+                        intervalDuration),
                     :broadcastCandidate => (seg[:broadcastCandidate] as Boolean) || (curr[:broadcastCandidate] as Boolean)
                 } as Segment;
                 _storage.setCurrentSegment(extendedSegment);
             }
+        }
+
+        private function hasBoundaryChange(prev as Snapshot, curr as Snapshot) as Boolean {
+            if (prev[:state] != curr[:state] || prev[:profile] != curr[:profile]) {
+                return true;
+            }
+            return (prev[:broadcastCandidate] != curr[:broadcastCandidate]);
+        }
+
+        private function createSeedSegment(snapshot as Snapshot) as Segment {
+            return {
+                :startTMin => snapshot[:tMin],
+                :endTMin => snapshot[:tMin],
+                :startBatt => snapshot[:battPct],
+                :endBatt => snapshot[:battPct],
+                :state => snapshot[:state],
+                :profile => snapshot[:profile],
+                :solarW => snapshot[:solarW],
+                :hrDensity => snapshot[:hrDensity],
+                :broadcastCandidate => snapshot[:broadcastCandidate]
+            } as Segment;
+        }
+
+        private function createStableIntervalSegment(prev as Snapshot, curr as Snapshot) as Segment {
+            return {
+                :startTMin => prev[:tMin],
+                :endTMin => curr[:tMin],
+                :startBatt => prev[:battPct],
+                :endBatt => curr[:battPct],
+                :state => prev[:state],
+                :profile => prev[:profile],
+                :solarW => ((prev[:solarW] as Number) + (curr[:solarW] as Number)) / 2,
+                :hrDensity => ((prev[:hrDensity] as Number) + (curr[:hrDensity] as Number)) / 2,
+                :broadcastCandidate => (prev[:broadcastCandidate] as Boolean) || (curr[:broadcastCandidate] as Boolean)
+            } as Segment;
+        }
+
+        private function mergeDurationWeightedAverage(existingAverage as Number,
+                                                      existingDurationMin as Number,
+                                                      intervalAverage as Number,
+                                                      intervalDurationMin as Number) as Number {
+            if (intervalDurationMin <= 0) {
+                return existingAverage;
+            }
+            if (existingDurationMin <= 0) {
+                return intervalAverage;
+            }
+
+            var totalDuration = existingDurationMin + intervalDurationMin;
+            return ((existingAverage * existingDurationMin) + (intervalAverage * intervalDurationMin)) / totalDuration;
         }
         
         // Finalize a segment (update end values, trigger learning if valid)
         private function finalizeSegment(segment as Segment, endSnapshot as Snapshot) as Void {
             segment[:endTMin] = endSnapshot[:tMin];
             segment[:endBatt] = endSnapshot[:battPct];
-            segment[:hrDensity] = (((segment[:hrDensity] as Number) + (endSnapshot[:hrDensity] as Number)) / 2);
             segment[:broadcastCandidate] = (segment[:broadcastCandidate] as Boolean) || (endSnapshot[:broadcastCandidate] as Boolean);
 
             segment = classifyBroadcastSegment(segment);
 
             if (isValidForPlanning(segment)) {
-                _storage.recordUsageForSegment(segment[:state] as State,
-                                               segment[:startTMin] as Number,
-                                               segment[:endTMin] as Number);
+                if (segment[:state] != STATE_BROADCAST) {
+                    _storage.recordUsageForSegment(segment[:state] as State,
+                                                   segment[:startTMin] as Number,
+                                                   segment[:endTMin] as Number);
+                }
             }
             
             // Check if segment is valid for learning

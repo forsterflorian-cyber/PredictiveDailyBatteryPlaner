@@ -18,7 +18,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
     
     function initialize() {
         View.initialize();
-        _forecaster = new BatteryBudget.Forecaster();
+        _forecaster = BatteryBudget.Forecaster.getSharedInstance();
     }
     
     function onShow() as Void {
@@ -34,11 +34,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
     
     function updateForecast() as Void {
         try {
-            if (_forecaster.hasMinimumConfidence()) {
-                _forecast = _forecaster.forecast();
-            } else {
-                _forecast = _forecaster.getSimpleForecast();
-            }
+            _forecast = _forecaster.getDisplayForecast();
         } catch (ex) {
             try {
                 _forecast = _forecaster.getSimpleForecast();
@@ -76,18 +72,20 @@ class BatteryBudgetDetailView extends WatchUi.View {
         _validationPromptShown = true;
 
         if (event == null) {
+            _validationPromptShown = false;
             WatchUi.requestUpdate();
             return true;
         }
 
         if (response == WatchUi.CONFIRM_YES) {
+            storage.recordConfirmedBroadcastUsageForEvent(event as BatteryBudget.PendingBroadcastEvent);
             var learner = new BatteryBudget.DrainLearner();
             learner.learnConfirmedBroadcastEvent(event as BatteryBudget.PendingBroadcastEvent);
-        } else {
-            storage.rollbackBroadcastUsageForEvent(event as BatteryBudget.PendingBroadcastEvent);
         }
 
+        _validationPromptShown = false;
         updateForecast();
+        maybePromptPendingBroadcastValidation();
         return true;
     }
 
@@ -481,11 +479,10 @@ class BatteryBudgetDetailView extends WatchUi.View {
         var budgetMin = forecast[:remainingActivityMinutes] as Number;
 
         // "Tonight" label
-        var endTimeLabel = "22:00";
-        var endTimeStr = BatteryBudget.StorageManager.getInstance().getSetting(:endOfDayTime);
-        if (endTimeStr instanceof String) {
-            endTimeLabel = endTimeStr as String;
-        }
+        var endOfDayMin = BatteryBudget.StorageManager.getInstance().getEndOfDayMinutes();
+        var endTimeLabel = BatteryBudget.TimeUtil.formatTime(
+            (endOfDayMin / 60).toNumber(),
+            (endOfDayMin % 60).toNumber());
 
         var numFont = Graphics.FONT_NUMBER_HOT;
         var percentFont = Graphics.FONT_SMALL;

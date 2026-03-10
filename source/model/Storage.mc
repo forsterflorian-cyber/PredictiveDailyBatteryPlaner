@@ -21,6 +21,7 @@ module BatteryBudget {
         // Max BATTERY_HISTORY_MAX_PAIRS pairs = 2*BATTERY_HISTORY_MAX_PAIRS numbers.
         private const KEY_BATTERY_HISTORY = "bh";
         private const BATTERY_HISTORY_MAX_PAIRS = 24;
+        private const FUTURE_TIMESTAMP_TOLERANCE_MIN = 5;
         private const MAX_PENDING_BROADCAST_EVENTS = 3;
 
         // Singleton instance
@@ -411,7 +412,7 @@ module BatteryBudget {
                 if (data != null && data instanceof Array) {
                     var arr = data as Array;
                     if (arr.size() >= 4) {
-                        return {
+                        var snapshot = {
                             :tMin => arr[0] as Number,
                             :battPct => arr[1] as Number,
                             :state => arr[2] as State,
@@ -421,6 +422,10 @@ module BatteryBudget {
                             :hrDensity => arr.size() >= 7 ? arr[6] as Number : 0,
                             :broadcastCandidate => arr.size() >= 8 ? arr[7] as Boolean : false
                         } as Snapshot;
+                        if (isPersistedTimestampValid(snapshot[:tMin] as Number, TimeUtil.nowEpochMinutes())) {
+                            return snapshot;
+                        }
+                        try { Storage.deleteValue(KEY_LAST_SNAPSHOT); } catch (ex2) {}
                     }
                 }
             } catch (ex) {
@@ -537,13 +542,24 @@ module BatteryBudget {
         //--------------------------------------------------
         
         private function loadSettings() as Dictionary {
+            var endOfDayMinutes = TimeUtil.parseTimeString(readStringProperty("endOfDayTime", "22:00"));
+            var riskThresholdYellow = clampNumber(readNumberProperty("riskThresholdYellow", 30), 0, 100);
+            var riskThresholdRed = clampNumber(readNumberProperty("riskThresholdRed", 15), 0, 100);
+
+            // Keep thresholds ordered so risk bands remain reachable.
+            if (riskThresholdRed > riskThresholdYellow) {
+                var tmp = riskThresholdRed;
+                riskThresholdRed = riskThresholdYellow;
+                riskThresholdYellow = tmp;
+            }
+
             return {
-                :endOfDayTime => readStringProperty("endOfDayTime", "22:00"),
-                :riskThresholdYellow => clampNumber(readNumberProperty("riskThresholdYellow", 30), 0, 100),
-                :riskThresholdRed => clampNumber(readNumberProperty("riskThresholdRed", 15), 0, 100),
+                :endOfDayTime => TimeUtil.formatCanonicalTime(endOfDayMinutes),
+                :riskThresholdYellow => riskThresholdYellow,
+                :riskThresholdRed => riskThresholdRed,
                 :conservativeFactor => readFactorProperty("conservativeFactor", 1.2f, 1.0f, 2.0f),
                 :optimisticFactor => readFactorProperty("optimisticFactor", 0.8f, 0.5f, 1.0f),
-                :sampleIntervalMin => clampNumber(readNumberProperty("sampleIntervalMin", 15), 5, 120),
+                :sampleIntervalMin => clampNumber(readNumberProperty("sampleIntervalMin", 15), 5, MAX_LEARNING_GAP_MIN),
                 :learningWindowDays => clampNumber(readNumberProperty("learningWindowDays", 14), 1, 60),
                 :targetLevel => clampNumber(readNumberProperty("targetLevel", TARGET_LEVEL), 5, 50),
                 :weeklyNativeHours => clampNumber(readNumberProperty("weeklyNativeHours", 0), 0, 40),
@@ -641,20 +657,44 @@ module BatteryBudget {
                         }
                     }
 
+                    var nowMin = TimeUtil.nowEpochMinutes();
+                    var sanitized = [] as Array<Number>;
+                    var lastTMin = 0;
+                    for (var pairIndex = 0; pairIndex < arr.size(); pairIndex += 2) {
+                        var tMin = arr[pairIndex] as Number;
+                        var battPct = arr[pairIndex + 1] as Number;
+                        if (!isPersistedTimestampValid(tMin, nowMin)) {
+                            continue;
+                        }
+                        if (sanitized.size() > 0 && tMin <= lastTMin) {
+                            continue;
+                        }
+                        sanitized.add(tMin);
+                        sanitized.add(battPct);
+                        lastTMin = tMin;
+                    }
+
                     var maxSize = BATTERY_HISTORY_MAX_PAIRS * 2;
-                    if (arr.size() > maxSize) {
+                    if (sanitized.size() > maxSize) {
                         var trimmed = [] as Array<Number>;
-                        var start = arr.size() - maxSize;
-                        for (var j = start; j < arr.size(); j++) {
-                            trimmed.add(arr[j] as Number);
+                        var start = sanitized.size() - maxSize;
+                        for (var j = start; j < sanitized.size(); j++) {
+                            trimmed.add(sanitized[j] as Number);
                         }
                         return trimmed;
                     }
 
-                    return arr as Array<Number>;
+                    return sanitized;
                 }
             } catch (ex) {}
             return null;
+        }
+
+        private function isPersistedTimestampValid(tMin as Number, nowMin as Number) as Boolean {
+            if (tMin <= 0) {
+                return false;
+            }
+            return tMin <= (nowMin + FUTURE_TIMESTAMP_TOLERANCE_MIN);
         }
 
         private function saveBatteryHistory() as Void {
@@ -791,9 +831,35 @@ module BatteryBudget {
                 return;
             }
 
-            var nextValue = (weekly[:broadcastUsedMin] as Number) - (event[:durationMin] as Number);
+            var overlapMin = TimeUtil.getOverlapMinutesWithinWeek(
+                event[:startTMin] as Number,
+                event[:endTMin] as Number,
+                event[:weekKey] as Number);
+            if (overlapMin <= 0) {
+                return;
+            }
+
+            var nextValue = (weekly[:broadcastUsedMin] as Number) - overlapMin;
             if (nextValue < 0) { nextValue = 0; }
             weekly[:broadcastUsedMin] = nextValue;
+            setWeeklyPlanState(weekly);
+        }
+
+        function recordConfirmedBroadcastUsageForEvent(event as PendingBroadcastEvent) as Void {
+            var weekly = getWeeklyPlanState();
+            if ((weekly[:weekKey] as Number) != (event[:weekKey] as Number)) {
+                return;
+            }
+
+            var overlapMin = TimeUtil.getOverlapMinutesWithinWeek(
+                event[:startTMin] as Number,
+                event[:endTMin] as Number,
+                event[:weekKey] as Number);
+            if (overlapMin <= 0) {
+                return;
+            }
+
+            weekly[:broadcastUsedMin] = (weekly[:broadcastUsedMin] as Number) + overlapMin;
             setWeeklyPlanState(weekly);
         }
 
