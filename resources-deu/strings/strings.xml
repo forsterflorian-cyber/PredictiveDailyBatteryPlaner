@@ -66,10 +66,15 @@
     <string id="LearningTitle">LERNT</string>
     <string id="MsgWaitForData">Warte auf Daten</string>
     <string id="DaysShort">T</string>
+    <string id="DaysLong">Tage</string>
     <string id="IdleOnlyEstimate">(nur Leerlauf)</string>
     <string id="NoData">Noch keine Daten</string>
     <string id="DaysCollected">Tage Daten</string>
     <string id="None">Keine</string>
+    <string id="NoPlanSet">Kein Plan</string>
+    <string id="UsedShort">genutzt</string>
+    <string id="LeftShort">offen</string>
+    <string id="PlanDoneShort">Erfuellt</string>
     <string id="BasedOnPattern">Basierend auf deinem Muster</string>
     <string id="BasedOnPatternShort">Aus Muster</string>
     <string id="MsgHighDrain">! Hoher Leerlauf</string>

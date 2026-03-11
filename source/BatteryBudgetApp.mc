@@ -14,17 +14,17 @@ class BatteryBudgetApp extends Application.AppBase {
     }
 
     function onStart(state as Dictionary?) as Void {
-        // Keep startup light on low-memory devices.
-        BatteryBudget.StorageManager.getInstance();
-        resetLearnedDataIfRequested();
-        bootstrapBackgroundEventsIfNeeded();
+        // Keep glance preview startup minimal; interactive startup is prepared on demand.
     }
 
     function onStop(state as Dictionary?) as Void {
-        BatteryBudget.StorageManager.getInstance().saveAll();
+        if (BatteryBudget.StorageManager.hasInstance()) {
+            BatteryBudget.StorageManager.getInstance().saveAll();
+        }
     }
 
     function getInitialView() as [Views] or [Views, InputDelegates] {
+        prepareInteractiveStartup();
         var view = new BatteryBudgetDetailView();
         var delegate = new BatteryBudgetDetailDelegate(view);
         return [view, delegate];
@@ -43,6 +43,12 @@ class BatteryBudgetApp extends Application.AppBase {
     (:background)
     function onBackgroundData(data as Application.PersistableType) as Void {
         // No-op: background delegate handles logging + scheduling.
+    }
+
+    private function prepareInteractiveStartup() as Void {
+        BatteryBudget.StorageManager.getInstance();
+        resetLearnedDataIfRequested();
+        bootstrapBackgroundEventsIfNeeded();
     }
 
     private function resetLearnedDataIfRequested() as Void {

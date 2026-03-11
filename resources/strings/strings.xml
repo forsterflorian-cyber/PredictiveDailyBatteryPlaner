@@ -68,10 +68,15 @@
     <string id="LearningTitle">LEARNING</string>
     <string id="MsgWaitForData">Waiting for data</string>
     <string id="DaysShort">d</string>
+    <string id="DaysLong">days</string>
     <string id="IdleOnlyEstimate">(idle-only estimate)</string>
     <string id="NoData">No data yet</string>
     <string id="DaysCollected">days collected</string>
     <string id="None">None</string>
+    <string id="NoPlanSet">No plan set</string>
+    <string id="UsedShort">used</string>
+    <string id="LeftShort">left</string>
+    <string id="PlanDoneShort">Done</string>
     <string id="BasedOnPattern">Based on your weekly pattern</string>
     <string id="BasedOnPatternShort">Based on pattern</string>
     <string id="MsgHighDrain">! High background drain</string>

@@ -54,6 +54,10 @@ module BatteryBudget {
             return _instance;
         }
 
+        static function hasInstance() as Boolean {
+            return _instance != null;
+        }
+
         static function resetInstanceForTests() as Void {
             _instance = null;
         }

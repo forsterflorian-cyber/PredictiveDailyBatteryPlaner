@@ -1,6 +1,7 @@
 import Toybox.WatchUi;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.System;
 import Toybox.Time;
 
 class BatteryBudgetDetailView extends WatchUi.View {
@@ -844,7 +845,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
         }
     }
 
-    // Page 4: Weekly plan / remaining planned load
+    // Page 4: Weekly plan progress
     private function drawWeekPlan(dc as Dc, width as Number, height as Number) as Void {
         var centerX = width / 2;
         var centerY = height / 2;
@@ -866,22 +867,16 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, titleY, titleFont, tr(Rez.Strings.WeekPlanTitle), Graphics.TEXT_JUSTIFY_CENTER);
-
-        if (_forecast == null) {
-            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(centerX, centerY, valueFont, tr(Rez.Strings.Learning), Graphics.TEXT_JUSTIFY_CENTER);
-            return;
-        }
-
-        var forecast = _forecast as BatteryBudget.ForecastResult;
         var settings = storage.getSettings();
         var weeklyState = storage.getWeeklyPlanState();
         var nativeBudgetMin = (settings[:weeklyNativeHours] as Number) * 60;
         var broadcastBudgetMin = (settings[:weeklyBroadcastHours] as Number) * 60;
         var nativeConsumedMin = weeklyState[:nativeUsedMin] as Number;
         var broadcastConsumedMin = weeklyState[:broadcastUsedMin] as Number;
-        var daysWithPlan = forecast[:remainingDaysWithPlan] as Float;
-        var footerColor = (daysWithPlan < 2.0f) ? Graphics.COLOR_RED : 0x00AAFF;
+        var hasAnyPlan = nativeBudgetMin > 0 || broadcastBudgetMin > 0;
+        var totalRemainingMin = calculateRemainingPlanMinutes(nativeConsumedMin, nativeBudgetMin)
+            + calculateRemainingPlanMinutes(broadcastConsumedMin, broadcastBudgetMin);
+        var footerColor = hasAnyPlan ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY;
         var nativeParams = {
             :width => width,
             :height => height,
@@ -915,9 +910,19 @@ class BatteryBudgetDetailView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.drawLine(lineInset, separatorY, width - lineInset, separatorY);
 
+        var footerText = buildWeekPlanFooter(totalRemainingMin, hasAnyPlan);
+        var footerSafeWidth = getSafeTextWidthAtY(width, height, footerY);
+        var footerFallback = hasAnyPlan
+            ? formatHoursValue(totalRemainingMin) + tr(Rez.Strings.UnitHourShort)
+            : tr(Rez.Strings.NoPlanSet);
+        var fittedFooter = fitTextOrFallback(dc, footerText, valueFont, footerSafeWidth, footerFallback);
+        if (fittedFooter == null) {
+            fittedFooter = footerFallback;
+        }
+
         dc.setColor(footerColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(centerX, footerY, valueFont,
-            tr(Rez.Strings.DaysWithPlan) + ": " + formatDays(daysWithPlan),
+            fittedFooter as String,
             Graphics.TEXT_JUSTIFY_CENTER);
     }
 
@@ -987,10 +992,12 @@ class BatteryBudgetDetailView extends WatchUi.View {
         if (barWidth > barSafeWidth) { barWidth = barSafeWidth; }
         if (barWidth < 50) { barWidth = 50; }
         var barX = centerX - (barWidth / 2);
-        var labelColor = (budgetMinutes > 0) ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY;
-        var valueColor = Graphics.COLOR_LT_GRAY;
+        var hasPlan = budgetMinutes > 0;
+        var hasUsage = consumedMinutes > 0;
+        var labelColor = (hasPlan || hasUsage) ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY;
+        var valueColor = hasPlan ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_WHITE;
         var percentage = getBudgetPercentage(consumedMinutes, budgetMinutes);
-        var isInactive = budgetMinutes <= 0;
+        var isInactive = !hasPlan;
         var barColor = baseColor;
         var barPercentage = percentage;
 
@@ -1019,7 +1026,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
             params[:color] as Number);
 
         dc.setColor(valueColor, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(centerX, statsY, valueFont, formatBudgetHours(consumedMinutes, budgetMinutes),
+        dc.drawText(centerX, statsY, valueFont, formatPlanStatus(consumedMinutes, budgetMinutes),
             Graphics.TEXT_JUSTIFY_CENTER);
     }
 
@@ -1146,13 +1153,6 @@ class BatteryBudgetDetailView extends WatchUi.View {
         return totalMinutes.toString() + tr(Rez.Strings.UnitMinuteShort);
     }
 
-    private function formatDays(days as Float) as String {
-        var intPart = days.toNumber();
-        var decPart = ((days - intPart.toFloat()) * 10.0f + 0.5f).toNumber();
-        if (decPart > 9) { decPart = 9; }
-        return intPart.toString() + "." + decPart.toString() + tr(Rez.Strings.DaysShort);
-    }
-
     private function getBudgetPercentage(consumedMinutes as Number, budgetMinutes as Number) as Float {
         if (budgetMinutes <= 0) {
             return 0.0f;
@@ -1166,12 +1166,39 @@ class BatteryBudgetDetailView extends WatchUi.View {
         return percentage;
     }
 
-    private function formatBudgetHours(consumedMinutes as Number, budgetMinutes as Number) as String {
-        return Lang.format("$1$ $2$ $3$ $4$", [
-            formatHoursValue(consumedMinutes),
-            tr(Rez.Strings.OfShort),
-            formatHoursValue(budgetMinutes),
-            tr(Rez.Strings.UnitHourShort)
+    private function calculateRemainingPlanMinutes(consumedMinutes as Number, budgetMinutes as Number) as Number {
+        if (budgetMinutes <= 0) {
+            return 0;
+        }
+
+        var remaining = budgetMinutes - consumedMinutes;
+        if (remaining < 0) {
+            return 0;
+        }
+        return remaining;
+    }
+
+    private function formatPlanStatus(consumedMinutes as Number, budgetMinutes as Number) as String {
+        if (budgetMinutes <= 0) {
+            if (consumedMinutes > 0) {
+                return Lang.format("$1$$2$ $3$", [
+                    formatHoursValue(consumedMinutes),
+                    tr(Rez.Strings.UnitHourShort),
+                    tr(Rez.Strings.UsedShort)
+                ]);
+            }
+            return tr(Rez.Strings.NoPlanSet);
+        }
+
+        var remainingMinutes = calculateRemainingPlanMinutes(consumedMinutes, budgetMinutes);
+        if (remainingMinutes <= 0) {
+            return tr(Rez.Strings.PlanDoneShort);
+        }
+
+        return Lang.format("$1$$2$ $3$", [
+            formatHoursValue(remainingMinutes),
+            tr(Rez.Strings.UnitHourShort),
+            tr(Rez.Strings.LeftShort)
         ]);
     }
 
@@ -1181,14 +1208,41 @@ class BatteryBudgetDetailView extends WatchUi.View {
         }
 
         var tenths = ((totalMinutes.toFloat() / 60.0f) * 10.0f + 0.5f).toNumber();
-        var wholeHours = tenths / 10;
-        var tenth = tenths - (wholeHours * 10);
+        return formatTenthsFromScaled(tenths);
+    }
 
-        if (tenth <= 0) {
-            return wholeHours.toString();
+    private function buildWeekPlanFooter(totalRemainingMin as Number, hasAnyPlan as Boolean) as String {
+        if (!hasAnyPlan) {
+            return tr(Rez.Strings.NoPlanSet);
         }
+        if (totalRemainingMin <= 0) {
+            return tr(Rez.Strings.PlanDoneShort);
+        }
+        return Lang.format("$1$$2$ $3$", [
+            formatHoursValue(totalRemainingMin),
+            tr(Rez.Strings.UnitHourShort),
+            tr(Rez.Strings.LeftShort)
+        ]);
+    }
 
-        return wholeHours.toString() + "." + tenth.toString();
+    private function formatTenthsFromScaled(scaledTenths as Number) as String {
+        var whole = scaledTenths / 10;
+        var tenth = scaledTenths - (whole * 10);
+        if (tenth <= 0) {
+            return whole.toString();
+        }
+        return whole.toString() + getDecimalSeparator() + tenth.toString();
+    }
+
+    private function getDecimalSeparator() as String {
+        try {
+            var settings = System.getDeviceSettings();
+            if (settings has :systemLanguage && settings.systemLanguage == System.LANGUAGE_DEU) {
+                return ",";
+            }
+        } catch (ex) {
+        }
+        return ".";
     }
 
     // Format rate with one decimal (proper rounding)
