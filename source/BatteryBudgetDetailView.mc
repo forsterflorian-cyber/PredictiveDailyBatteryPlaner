@@ -249,12 +249,11 @@ class BatteryBudgetDetailView extends WatchUi.View {
     }
 
     // Build the solar-gain estimate string for the last 24 h.
-    // Shows "Kalibr." when the solar bonus is suppressed after a charge cycle.
+    // Shows a localized calibration hint when the solar bonus is suppressed after a charge cycle.
     private function buildSolarGainStr() as String {
         try {
-            // Show calibrating hint when post-charge suppression is active
             if (_forecast != null && (_forecast as BatteryBudget.ForecastResult)[:solarSuppressed] == true) {
-                return tr(Rez.Strings.SolarGain24h) + ": Kalibr.";
+                return tr(Rez.Strings.SolarGain24h) + ": " + tr(Rez.Strings.CalibratingShort);
             }
             var rates = BatteryBudget.StorageManager.getInstance().getDrainRates();
             var sgv = rates[:solarGain] as Float;
@@ -264,10 +263,8 @@ class BatteryBudgetDetailView extends WatchUi.View {
                 var fraction = rsv.toFloat() / 100.0f;
                 // 24 h estimate, 50 % conservative
                 var gain24h = gainRate * fraction * 24.0f * 0.5f;
-                var intPart  = gain24h.toNumber();
-                var decPart  = ((gain24h - intPart.toFloat()) * 10 + 0.5f).toNumber().abs();
-                if (decPart > 9) { decPart = 9; }
-                return tr(Rez.Strings.SolarGain24h) + ": +" + intPart.toString() + "." + decPart.toString() + "%";
+                var scaledTenths = ((gain24h * 10.0f) + 0.5f).toNumber();
+                return tr(Rez.Strings.SolarGain24h) + ": +" + formatTenthsFromScaled(scaledTenths) + "%";
             }
         } catch (ex) {}
         return tr(Rez.Strings.SolarGain24h) + ": --";
@@ -1247,10 +1244,8 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
     // Format rate with one decimal (proper rounding)
     private function formatRate(rate as Float) as String {
-        var intPart = rate.toNumber();
-        var decPart = ((rate - intPart) * 10 + 0.5f).toNumber().abs();
-        if (decPart > 9) { decPart = 9; }
-        return intPart.toString() + "." + decPart.toString();
+        var scaledTenths = ((rate * 10.0f) + 0.5f).toNumber();
+        return formatTenthsFromScaled(scaledTenths);
     }
     
     // Draw page indicator dots

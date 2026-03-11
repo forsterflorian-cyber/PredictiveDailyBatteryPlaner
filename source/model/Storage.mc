@@ -674,7 +674,7 @@ module BatteryBudget {
                             continue;
                         }
                         sanitized.add(tMin);
-                        sanitized.add(battPct);
+                        sanitized.add(clampBatteryPercent(battPct));
                         lastTMin = tMin;
                     }
 
@@ -721,8 +721,27 @@ module BatteryBudget {
         // Append a new [tMin, battPct] reading; evicts oldest when buffer is full.
         function appendBatteryHistory(tMin as Number, battPct as Number) as Void {
             var history = getBatteryHistory();
+            if (!isPersistedTimestampValid(tMin, TimeUtil.nowEpochMinutes())) {
+                return;
+            }
+
+            var sanitizedBatt = clampBatteryPercent(battPct);
+            if (history.size() >= 2) {
+                var lastIndex = history.size() - 2;
+                var lastTMin = history[lastIndex] as Number;
+                if (tMin < lastTMin) {
+                    return;
+                }
+                if (tMin == lastTMin) {
+                    history[lastIndex + 1] = sanitizedBatt;
+                    _batteryHistory = history;
+                    saveBatteryHistory();
+                    return;
+                }
+            }
+
             history.add(tMin);
-            history.add(battPct);
+            history.add(sanitizedBatt);
             // Trim to max capacity (2 values per pair)
             var maxSize = BATTERY_HISTORY_MAX_PAIRS * 2;
             while (history.size() > maxSize) {
@@ -758,7 +777,11 @@ module BatteryBudget {
                     :broadcastUsedMin => 0
                 } as WeeklyPlanState;
             }
-            return state;
+            return {
+                :weekKey => currentWeekKey,
+                :nativeUsedMin => clampNonNegativeMinutes(state[:nativeUsedMin] as Number),
+                :broadcastUsedMin => clampNonNegativeMinutes(state[:broadcastUsedMin] as Number)
+            } as WeeklyPlanState;
         }
 
         private function loadWeeklyPlanState() as WeeklyPlanState? {
@@ -1051,6 +1074,20 @@ module BatteryBudget {
             try { Storage.deleteValue(KEY_CURRENT_SEGMENT); } catch (ex) {}
             _batteryHistory = [] as Array<Number>;
             try { Storage.deleteValue(KEY_BATTERY_HISTORY); } catch (ex) {}
+        }
+
+        private static function clampNonNegativeMinutes(value as Number) as Number {
+            return value < 0 ? 0 : value;
+        }
+
+        private function clampBatteryPercent(value as Number) as Number {
+            if (value < 0) {
+                return 0;
+            }
+            if (value > 100) {
+                return 100;
+            }
+            return value;
         }
 
         private function migrateLegacySegmentHistory() as Void {

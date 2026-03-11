@@ -64,6 +64,7 @@
     <string id="Confidence">Confidence</string>
     <string id="Learning">Learning...</string>
     <string id="LearningTitle">LEARNING</string>
+    <string id="CalibratingShort">Cal.</string>
     <string id="IdleOnlyEstimate">(idle-only estimate)</string>
     <string id="NoData">No data yet</string>
     <string id="DaysCollected">days collected</string>

@@ -62,6 +62,7 @@
     <string id="Confidence">Sicherheit</string>
     <string id="Learning">Lernt...</string>
     <string id="LearningTitle">LERNT</string>
+    <string id="CalibratingShort">Kalibr.</string>
     <string id="IdleOnlyEstimate">(nur Leerlauf)</string>
     <string id="NoData">Noch keine Daten</string>
     <string id="DaysCollected">Tage Daten</string>

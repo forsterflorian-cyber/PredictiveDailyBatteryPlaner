@@ -54,3 +54,41 @@ function testPendingBroadcastEventsPersistAcrossRestart(logger as Test.Logger) a
     BatteryBudget.StorageManager.resetInstanceForTests();
     return true;
 }
+
+(:test)
+function testWeeklyPlanStateClampsNegativeUsage(logger as Test.Logger) as Boolean {
+    var state = BatteryBudgetTestHelper.makeWeeklyPlanStateMock(2000, -30, -15);
+    var normalized = BatteryBudget.StorageManager.normalizeWeeklyPlanStateForWeek(state, 2000);
+
+    logger.debug("nativeUsedMin=" + (normalized[:nativeUsedMin] as Number).toString()
+        + " broadcastUsedMin=" + (normalized[:broadcastUsedMin] as Number).toString());
+    Test.assertEqual(0, normalized[:nativeUsedMin] as Number);
+    Test.assertEqual(0, normalized[:broadcastUsedMin] as Number);
+    return true;
+}
+
+(:test)
+function testBatteryHistoryRejectsBackwardAndMergesDuplicateMinute(logger as Test.Logger) as Boolean {
+    BatteryBudget.StorageManager.resetInstanceForTests();
+    var storage = BatteryBudget.StorageManager.getInstance();
+    storage.resetAllData();
+
+    var startTMin = BatteryBudget.TimeUtil.nowEpochMinutes() - 20;
+    storage.appendBatteryHistory(startTMin, 80);
+    storage.appendBatteryHistory(startTMin + 5, 79);
+    storage.appendBatteryHistory(startTMin + 5, 78);
+    storage.appendBatteryHistory(startTMin + 4, 77);
+
+    var history = storage.getBatteryHistory();
+    logger.debug("historySize=" + history.size().toString()
+        + " lastTMin=" + (history[2] as Number).toString()
+        + " lastBatt=" + (history[3] as Number).toString());
+
+    Test.assertEqual(4, history.size());
+    Test.assertEqual(startTMin + 5, history[2] as Number);
+    Test.assertEqual(78, history[3] as Number);
+
+    storage.resetAllData();
+    BatteryBudget.StorageManager.resetInstanceForTests();
+    return true;
+}
