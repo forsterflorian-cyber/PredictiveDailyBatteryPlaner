@@ -1,7 +1,7 @@
-# Pre-Release Checklist
+# Release Checklist
 
-- [ ] All 48 Unit Tests passed (monkeyc -t).
-- [ ] Build successful for FR955 (Modern) and VA4 (Legacy).
-- [ ] No "Too many arguments" errors in log.
-- [ ] Strings.xml verified for German and English.
-- [ ] Memory stats checked in Simulator (< 64kB for Widget).
+- [ ] Run the unit tests (`monkeyc -t`).
+- [ ] Build the reference device and store package (`.\scripts\build-release.ps1`).
+- [ ] Spot-check one modern simulator and one legacy/button-focused simulator.
+- [ ] Verify English and German strings plus the store listing text.
+- [ ] Confirm no widget memory or argument-limit regressions in simulator logs.
