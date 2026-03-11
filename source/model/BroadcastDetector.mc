@@ -121,8 +121,8 @@ module BatteryBudget {
             try {
                 if ((Toybox has :Sensor) && (Toybox.Sensor has :getInfo)) {
                     var info = Sensor.getInfo();
-                    if (info != null && info has :heartRate && info.heartRate != null) {
-                        return info.heartRate.toNumber();
+                    if (info != null && info has :heartRate && info.heartRate instanceof Number) {
+                        return (info.heartRate as Number).toNumber();
                     }
                 }
             } catch (ex) {}

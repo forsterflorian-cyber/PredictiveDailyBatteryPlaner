@@ -132,7 +132,7 @@ module BatteryBudget {
         }
         
         // Check if currently in an activity
-        private function hasNativeActivityStarted(info) as Boolean {
+        private function hasNativeActivityStarted(info as Activity.Info?) as Boolean {
             if (info == null) {
                 return false;
             }
@@ -148,7 +148,7 @@ module BatteryBudget {
             return false;
         }
 
-        private function getActivityInfoSafe() {
+        private function getActivityInfoSafe() as Activity.Info? {
             try {
                 return Activity.getActivityInfo();
             } catch (ex) {
@@ -158,16 +158,16 @@ module BatteryBudget {
         }
         
         // Detect activity profile if in activity
-        private function detectCurrentProfile(state as State, info) as Profile {
+        private function detectCurrentProfile(state as State, info as Activity.Info?) as Profile {
             if (state != STATE_ACTIVITY) {
                 return PROFILE_GENERIC;
             }
-            
+             
             try {
                 if (info != null && info has :sport) {
                     var sport = info.sport;
-                    if (sport != null) {
-                        return mapSportToProfile(sport);
+                    if (sport instanceof Number) {
+                        return mapSportToProfile(sport as Number);
                     }
                 }
             } catch (ex) {
@@ -236,11 +236,14 @@ module BatteryBudget {
             if (lastSnapshot == null) {
                 return true;
             }
-            
+             
             var nowMin = TimeUtil.nowEpochMinutes();
-            var lastMin = lastSnapshot[:tMin];
+            var lastMin = lastSnapshot[:tMin] as Number;
             var minInterval = getMinSnapshotInterval();
-            
+            if (minInterval <= 0) {
+                minInterval = 15;
+            }
+             
             return (nowMin - lastMin) >= minInterval;
         }
     }

@@ -79,7 +79,7 @@
     <string id="NativeLabel">Native</string>
     <string id="UnitHourShort">h</string>
     <string id="UnitMinuteShort">m</string>
-    <string id="BroadcastConfirmPrompt">High drain without activity. HR Broadcast / Zwift?</string>
+    <string id="BroadcastConfirmPrompt">High drain without recorded activity. Was this HR Broadcast / Zwift?</string>
     <string id="WeekPlanTitle">Week Plan</string>
 
     <!-- Risk levels -->

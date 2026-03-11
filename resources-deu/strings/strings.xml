@@ -76,7 +76,7 @@
     <string id="LabelBudget">Budget</string>
     <string id="UnitHourShort">h</string>
     <string id="UnitMinuteShort">m</string>
-    <string id="BroadcastConfirmPrompt">Hoher Verbrauch ohne Aktivitaet. HR-Broadcast / Zwift?</string>
+    <string id="BroadcastConfirmPrompt">Hoher Verbrauch ohne aufgezeichnete Aktivitaet. War das HR-Broadcast / Zwift?</string>
     <string id="NativeLabel">Native</string>
     <string id="WeekPlanTitle">Wochenplan</string>
 

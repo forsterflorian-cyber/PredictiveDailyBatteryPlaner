@@ -25,8 +25,12 @@ class BatteryBudgetDetailView extends WatchUi.View {
     function onShow() as Void {
         // Log snapshot when view shown
         var logger = new BatteryBudget.SnapshotLogger();
-        if (logger.shouldTakeSnapshot()) {
-            logger.logSnapshot();
+        try {
+            if (logger.shouldTakeSnapshot()) {
+                logger.logSnapshot();
+            }
+        } catch (ex) {
+            System.println("BatteryBudget snapshot on show failed: " + ex.toString());
         }
 
         refreshForecastIfNeeded(true);
@@ -37,9 +41,11 @@ class BatteryBudgetDetailView extends WatchUi.View {
         try {
             _forecast = _forecaster.getDisplayForecast();
         } catch (ex) {
+            System.println("BatteryBudget forecast failed, using fallback: " + ex.toString());
             try {
                 _forecast = _forecaster.getSimpleForecast();
             } catch (ex2) {
+                System.println("BatteryBudget fallback forecast failed: " + ex2.toString());
                 _forecast = null;
             }
         }
@@ -79,9 +85,13 @@ class BatteryBudgetDetailView extends WatchUi.View {
         }
 
         if (response == WatchUi.CONFIRM_YES) {
-            storage.recordConfirmedBroadcastUsageForEvent(event as BatteryBudget.PendingBroadcastEvent);
-            var learner = new BatteryBudget.DrainLearner();
-            learner.learnConfirmedBroadcastEvent(event as BatteryBudget.PendingBroadcastEvent);
+            try {
+                storage.recordConfirmedBroadcastUsageForEvent(event as BatteryBudget.PendingBroadcastEvent);
+                var learner = new BatteryBudget.DrainLearner();
+                learner.learnConfirmedBroadcastEvent(event as BatteryBudget.PendingBroadcastEvent);
+            } catch (ex) {
+                System.println("BatteryBudget broadcast confirmation failed: " + ex.toString());
+            }
         }
 
         _validationPromptShown = false;
@@ -100,10 +110,18 @@ class BatteryBudgetDetailView extends WatchUi.View {
             return;
         }
 
-        var durationStr = formatMinutesCompact((pending[:durationMin] as Number));
+        var durationMin = pending[:durationMin] as Number;
+        if (durationMin < 0) {
+            durationMin = 0;
+        }
+        var battDrop = pending[:battDrop] as Number;
+        if (battDrop < 0) {
+            battDrop = 0;
+        }
+        var durationStr = formatMinutesCompact(durationMin);
         var message = tr(Rez.Strings.BroadcastConfirmPrompt)
             + " " + durationStr
-            + " / -" + (pending[:battDrop] as Number).toString() + "%";
+            + " / -" + battDrop.toString() + "%";
 
         _validationPromptShown = true;
         try {
@@ -1073,7 +1091,8 @@ class BatteryBudgetDetailView extends WatchUi.View {
         return ((height.toFloat() * 0.95f) + 0.5f).toNumber();
     }
 
-    private function fitTextOrFallback(dc as Dc, text as String, font, maxWidth as Number, fallback as String) as String? {
+    private function fitTextOrFallback(dc as Dc, text as String, font as Graphics.FontType,
+                                       maxWidth as Number, fallback as String) as String? {
         if (dc.getTextWidthInPixels(text, font) <= maxWidth) {
             return text;
         }
@@ -1134,7 +1153,7 @@ class BatteryBudgetDetailView extends WatchUi.View {
 
     private function formatMinutesCompact(totalMinutes as Number) as String {
         if (totalMinutes <= 0) {
-            return "0" + tr(Rez.Strings.UnitHourShort);
+            return "0" + tr(Rez.Strings.UnitMinuteShort);
         }
 
         if (totalMinutes >= 60) {

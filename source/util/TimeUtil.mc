@@ -24,9 +24,7 @@ module BatteryBudget {
             var moment = new Time.Moment(epochMin * 60);
             var info = Gregorian.info(moment, Time.FORMAT_SHORT);
             var dayStart = epochMin - (info.hour * 60 + info.min);
-            var dow = info.day_of_week - 1; // 0=Sunday
-            if (dow < 0) { dow = 0; }
-            if (dow > 6) { dow = 6; }
+            var dow = getWeekdayIndex(info);
 
             // Monday-based week key: Monday=0 offset, Sunday=6 offset.
             var daysSinceMonday = (dow == 0) ? 6 : (dow - 1);
@@ -65,10 +63,16 @@ module BatteryBudget {
         static function getMinutesSinceMidnight(info as Gregorian.Info) as Number {
             return info.hour * 60 + info.min;
         }
+
+        static function getWeekdayIndex(info as Gregorian.Info) as Number {
+            return normalizeDayOfWeek(info.day_of_week);
+        }
         
         // Get slot index (0-23) from hour — one slot per hour.
         // The minute parameter is kept for call-site compatibility but is ignored.
         static function getSlotIndex(hour as Number, minute as Number) as Number {
+            if (hour < 0) { return 0; }
+            if (hour >= SLOTS_PER_DAY) { return SLOTS_PER_DAY - 1; }
             return hour;
         }
         
@@ -81,20 +85,14 @@ module BatteryBudget {
         // Get weekday (0=Sunday, 6=Saturday) - Garmin uses 1=Sunday
         static function getWeekday() as Number {
             var info = getLocalTimeInfo();
-            var dow = info.day_of_week - 1; // Convert to 0-based
-            if (dow < 0) { dow = 0; }
-            if (dow > 6) { dow = 6; }
-            return dow;
+            return getWeekdayIndex(info);
         }
         
         // Get weekday from epoch minutes
         static function getWeekdayFromEpochMin(epochMin as Number) as Number {
             var moment = new Time.Moment(epochMin * 60);
             var info = Gregorian.info(moment, Time.FORMAT_SHORT);
-            var dow = info.day_of_week - 1;
-            if (dow < 0) { dow = 0; }
-            if (dow > 6) { dow = 6; }
-            return dow;
+            return getWeekdayIndex(info);
         }
         
         // Get slot index from epoch minutes (local time)
@@ -300,7 +298,27 @@ module BatteryBudget {
             if (hour > 23) { return 23; }
             return hour;
         }
-        
+
+        private static function normalizeDayOfWeek(dayOfWeek) as Number {
+            var dow = 1;
+            try {
+                if (dayOfWeek instanceof Number) {
+                    dow = dayOfWeek as Number;
+                } else if (dayOfWeek != null) {
+                    var converted = dayOfWeek.toNumber();
+                    if (converted != null) {
+                        dow = converted as Number;
+                    }
+                }
+            } catch (ex) {
+            }
+
+            dow -= 1;
+            if (dow < 0) { dow = 0; }
+            if (dow > 6) { dow = 6; }
+            return dow;
+        }
+         
         // Format hour:minute respecting the device's 12h/24h preference.
         // Returns "HH:MM" (24h) or "H:MMam/pm" (12h).
         static function formatTime(hour as Number, minute as Number) as String {

@@ -904,15 +904,48 @@ module BatteryBudget {
                         var item = raw[i];
                         if (item instanceof Array) {
                             var arr = item as Array;
-                            if (arr.size() >= 7) {
+                            if (arr.size() >= 7
+                                && arr[0] instanceof Number
+                                && arr[1] instanceof Number
+                                && arr[2] instanceof Number
+                                && arr[3] instanceof Number
+                                && arr[4] instanceof Number
+                                && arr[5] instanceof Number
+                                && arr[6] instanceof Number) {
+                                var startTMin = arr[0] as Number;
+                                var endTMin = arr[1] as Number;
+                                if (endTMin <= startTMin) {
+                                    continue;
+                                }
+
+                                var durationMin = arr[2] as Number;
+                                if (durationMin <= 0) {
+                                    durationMin = endTMin - startTMin;
+                                }
+
+                                var battDrop = arr[3] as Number;
+                                if (battDrop < 0) {
+                                    battDrop = 0;
+                                }
+
+                                var drainRate = (arr[4] as Number).toFloat();
+                                if (drainRate < 0.0f) {
+                                    drainRate = 0.0f;
+                                }
+
+                                var hrDensity = arr[6] as Number;
+                                if (hrDensity < 0) {
+                                    hrDensity = 0;
+                                }
+
                                 events.add({
-                                    :startTMin => arr[0] as Number,
-                                    :endTMin => arr[1] as Number,
-                                    :durationMin => arr[2] as Number,
-                                    :battDrop => arr[3] as Number,
-                                    :drainRate => (arr[4] as Number).toFloat(),
+                                    :startTMin => startTMin,
+                                    :endTMin => endTMin,
+                                    :durationMin => durationMin,
+                                    :battDrop => battDrop,
+                                    :drainRate => drainRate,
                                     :weekKey => arr[5] as Number,
-                                    :hrDensity => arr[6] as Number
+                                    :hrDensity => hrDensity
                                 } as PendingBroadcastEvent);
                             }
                         }

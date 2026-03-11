@@ -558,6 +558,17 @@ function testSlotIndexAlwaysInBounds(logger as Test.Logger) as Boolean {
     return true;
 }
 
+// Test I6: out-of-range hours must clamp to the nearest valid hourly slot.
+(:test)
+function testSlotIndexClampsOutOfRangeHours(logger as Test.Logger) as Boolean {
+    var belowRange = BatteryBudget.TimeUtil.getSlotIndex(-3, 0);
+    var aboveRange = BatteryBudget.TimeUtil.getSlotIndex(42, 0);
+    logger.debug("belowRange=" + belowRange.toString() + " aboveRange=" + aboveRange.toString());
+    Test.assertEqual(0, belowRange);
+    Test.assertEqual(BatteryBudget.SLOTS_PER_DAY - 1, aboveRange);
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // J. Broadcast detection and weekly-plan arithmetic
 // ---------------------------------------------------------------------------

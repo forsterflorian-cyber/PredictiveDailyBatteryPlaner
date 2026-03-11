@@ -43,9 +43,7 @@ module BatteryBudget {
             var nowBatt = getBatteryPercent();
             var localInfo = TimeUtil.getLocalTimeInfo();
             var nowMinutes = TimeUtil.getMinutesSinceMidnight(localInfo);
-            var weekday = localInfo.day_of_week - 1;
-            if (weekday < 0) { weekday = 0; }
-            if (weekday > 6) { weekday = 6; }
+            var weekday = TimeUtil.getWeekdayIndex(localInfo);
             var currentSlot = TimeUtil.getSlotIndex(localInfo.hour, localInfo.min);
             var endOfDayMinutes = _storage.getEndOfDayMinutes();
             var endOfDaySlotRangeEnd = TimeUtil.getEndOfDaySlotRangeEnd(endOfDayMinutes);

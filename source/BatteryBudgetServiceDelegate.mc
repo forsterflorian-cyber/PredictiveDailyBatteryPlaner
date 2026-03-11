@@ -14,22 +14,34 @@ class BatteryBudgetServiceDelegate extends System.ServiceDelegate {
     function onTemporalEvent() as Void {
         var storage = BatteryBudget.StorageManager.getInstance();
         var logger = new BatteryBudget.SnapshotLogger();
+        var exitStatus = "ok";
 
-        logger.logSnapshot();
-        storage.saveAll();
+        try {
+            logger.logSnapshot();
+            storage.saveAll();
 
-        var settings = storage.getSettings();
-        var windowDays = settings[:learningWindowDays];
-        if (windowDays == null || !(windowDays instanceof Number)) { windowDays = 14; }
-        storage.cleanupOldSegments(windowDays as Number);
+            var settings = storage.getSettings();
+            var windowDays = settings[:learningWindowDays];
+            if (windowDays == null || !(windowDays instanceof Number) || (windowDays as Number) < 1) {
+                windowDays = 14;
+            }
+            storage.cleanupOldSegments(windowDays as Number);
 
-        // Apply pattern decay weekly; inline to avoid PatternLearner allocation.
-        applyWeeklyDecayIfNeeded(storage);
+            // Apply pattern decay weekly; inline to avoid PatternLearner allocation.
+            applyWeeklyDecayIfNeeded(storage);
+        } catch (ex) {
+            exitStatus = "error";
+            System.println("BatteryBudget background sample failed: " + ex.toString());
+            try {
+                storage.saveAll();
+            } catch (saveEx) {
+            }
+        }
 
         // Temporal background events are one-shot; reuse logger instance.
         scheduleNextTemporalEvent(storage, logger);
 
-        Background.exit({"status" => "ok", "time" => Time.now().value()});
+        Background.exit({"status" => exitStatus, "time" => Time.now().value()});
     }
 
     // Temporal events are one-shot; schedule the next one.
