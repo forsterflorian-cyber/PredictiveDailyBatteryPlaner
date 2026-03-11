@@ -65,12 +65,7 @@ module BatteryBudget {
         :nextActivityTime as Number or Null,
         :nextActivityDuration as Number or Null,
         :nextActivityDrain as Number or Null,
-        :remainingActivityMinutes as Number,  // minutes of activity budget until target level
-        :abnormalDrain as Boolean,            // true when idle rate is >50% above default
-        :dataPointsPerProfile as Dictionary,  // sample counts keyed by :idle/:activityGeneric/:run etc.
-        :remainingNativePlanMinutes as Number,
-        :remainingBroadcastPlanMinutes as Number,
-        :remainingDaysWithPlan as Float,
+        :remainingActivityMinutes as Number,
         :solarSuppressed as Boolean
     };
 
@@ -111,7 +106,6 @@ module BatteryBudget {
     // is negligible given EMA smoothing on the forecast side.
     const SLOTS_PER_DAY = 24;
     const SLOT_DURATION_MIN = 60;
-    const MAX_SEGMENTS = 300;
     const MIN_SEGMENT_DURATION_MIN = 10;
 
     // Maximum gap between two snapshots before the interval is excluded from learning

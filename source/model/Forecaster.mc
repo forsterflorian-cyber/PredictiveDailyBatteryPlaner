@@ -1,6 +1,5 @@
 import Toybox.Lang;
 import Toybox.System;
-import Toybox.Time;
 import Toybox.WatchUi;
 
 module BatteryBudget {
@@ -58,7 +57,6 @@ module BatteryBudget {
             // Get learned rates
             var idleRate = getSafeIdleRate();
             var activityRate = getSafeActivityRate();
-            var broadcastRate = getSafeBroadcastRate();
 
             // Read target level from settings (default: compile-time constant)
             var targetLevelSetting = settings[:targetLevel];
@@ -196,18 +194,6 @@ module BatteryBudget {
                 nowBatt.toFloat(), totalDrainTypical, effectiveExtraPerHour,
                 targetLevelVal, remainingMinutes);
 
-            var abnormalDrain = _drainLearner.isAbnormalDrain();
-            var dataPointsPerProfile = _drainLearner.getProfileSampleCounts();
-            var remainingNativePlanMinutes = getRemainingPlannedMinutes(:weeklyNativeHours, :nativeUsedMin);
-            var remainingBroadcastPlanMinutes = getRemainingPlannedMinutes(:weeklyBroadcastHours, :broadcastUsedMin);
-            var remainingDaysWithPlan = Forecaster.computeRemainingDaysWithPlan(
-                nowBatt,
-                idleRate,
-                activityRate,
-                broadcastRate,
-                remainingNativePlanMinutes,
-                remainingBroadcastPlanMinutes);
-
             return {
                 :typical => endBattTypical.toNumber(),
                 :conservative => endBattConservative.toNumber(),
@@ -218,64 +204,10 @@ module BatteryBudget {
                 :nextActivityDuration => nextActivityDuration,
                 :nextActivityDrain => nextActivityDrain != null ? nextActivityDrain.toNumber() : null,
                 :remainingActivityMinutes => remainingActivityMinutes,
-                :abnormalDrain => abnormalDrain,
-                :dataPointsPerProfile => dataPointsPerProfile,
-                :remainingNativePlanMinutes => remainingNativePlanMinutes,
-                :remainingBroadcastPlanMinutes => remainingBroadcastPlanMinutes,
-                :remainingDaysWithPlan => remainingDaysWithPlan,
                 :solarSuppressed => isPostCharge
             } as ForecastResult;
         }
 
-        // "What-If" planner: compute the forecast impact of adding a hypothetical activity.
-        // Returns a modified ForecastResult showing EOD battery after the planned session.
-        // The extra drain = (profileRate - idleRate) × durationMinutes / 60,
-        // because the activity replaces idle time that would have been spent anyway.
-        function forecastWithPlannedActivity(profile as Profile, durationMinutes as Number) as ForecastResult {
-            var base = getDisplayForecast();
-
-            var idleRate = getSafeIdleRate();
-            var profileRate = getSafeProfileRate(profile, getSafeActivityRate());
-
-            // Net extra drain vs just being idle
-            var extraPerHour = profileRate - idleRate;
-            if (extraPerHour < 0.0f) { extraPerHour = 0.0f; }
-            var extraDrain = extraPerHour * durationMinutes.toFloat() / 60.0f;
-
-            var settings = _storage.getSettings();
-            var riskThresholdRed = settings[:riskThresholdRed] as Number;
-            var riskThresholdYellow = settings[:riskThresholdYellow] as Number;
-            var conservativeFactor = settings[:conservativeFactor] as Float;
-            var optimisticFactor = settings[:optimisticFactor] as Float;
-
-            var newTypical     = clampBattery((base[:typical] as Number).toFloat()      - extraDrain);
-            var newConservative = clampBattery((base[:conservative] as Number).toFloat() - extraDrain * conservativeFactor);
-            var newOptimistic  = clampBattery((base[:optimistic] as Number).toFloat()    - extraDrain * optimisticFactor);
-            var newRisk = calculateRisk(newConservative.toNumber(), riskThresholdRed, riskThresholdYellow);
-
-            var remainingBudget = base[:remainingActivityMinutes] as Number;
-            remainingBudget -= durationMinutes;
-            if (remainingBudget < 0) { remainingBudget = 0; }
-
-            return {
-                :typical => newTypical.toNumber(),
-                :conservative => newConservative.toNumber(),
-                :optimistic => newOptimistic.toNumber(),
-                :risk => newRisk,
-                :confidence => base[:confidence],
-                :nextActivityTime => base[:nextActivityTime],
-                :nextActivityDuration => base[:nextActivityDuration],
-                :nextActivityDrain => base[:nextActivityDrain],
-                :remainingActivityMinutes => remainingBudget,
-                :abnormalDrain => base[:abnormalDrain],
-                :dataPointsPerProfile => base[:dataPointsPerProfile],
-                :remainingNativePlanMinutes => base[:remainingNativePlanMinutes],
-                :remainingBroadcastPlanMinutes => base[:remainingBroadcastPlanMinutes],
-                :remainingDaysWithPlan => base[:remainingDaysWithPlan],
-                :solarSuppressed => base[:solarSuppressed]
-            } as ForecastResult;
-        }
-        
         // Get current battery percentage
         private function getBatteryPercent() as Number {
             var stats = System.getSystemStats();
@@ -430,16 +362,6 @@ module BatteryBudget {
             return budgetMin;
         }
 
-        private function getRemainingPlannedMinutes(settingKey as Symbol, usedKey as Symbol) as Number {
-            var settings = _storage.getSettings();
-            var hoursValue = settings[settingKey];
-            var plannedMinutes = (hoursValue instanceof Number) ? ((hoursValue as Number) * 60) : 0;
-
-            var weekly = _storage.getWeeklyPlanState();
-            var usedMinutes = weekly[usedKey] as Number;
-            return Forecaster.calculateRemainingPlannedMinutes(plannedMinutes, usedMinutes);
-        }
-
         static function calculateRemainingPlannedMinutes(plannedMinutes as Number, usedMinutes as Number) as Number {
             var remaining = plannedMinutes - usedMinutes;
             if (remaining < 0) {
@@ -514,8 +436,6 @@ module BatteryBudget {
         function getSimpleForecast() as ForecastResult {
             var nowBatt = getBatteryPercent();
             var idleRate = getSafeIdleRate();
-            var activityRate = getSafeActivityRate();
-            var broadcastRate = getSafeBroadcastRate();
             
             var endOfDayMinutes = _storage.getEndOfDayMinutes();
             var minutesRemaining = TimeUtil.getMinutesUntilTime(endOfDayMinutes);
@@ -546,15 +466,6 @@ module BatteryBudget {
             var riskThresholdYellow = settings[:riskThresholdYellow] as Number;
             var risk = calculateRisk(endBatt.toNumber(), riskThresholdRed, riskThresholdYellow);
             var confidence = calculateConfidence();
-            var remainingNativePlanMinutes = getRemainingPlannedMinutes(:weeklyNativeHours, :nativeUsedMin);
-            var remainingBroadcastPlanMinutes = getRemainingPlannedMinutes(:weeklyBroadcastHours, :broadcastUsedMin);
-            var remainingDaysWithPlan = Forecaster.computeRemainingDaysWithPlan(
-                nowBatt,
-                idleRate,
-                activityRate,
-                broadcastRate,
-                remainingNativePlanMinutes,
-                remainingBroadcastPlanMinutes);
             
             return {
                 :typical => endBatt.toNumber(),
@@ -566,11 +477,6 @@ module BatteryBudget {
                 :nextActivityDuration => null,
                 :nextActivityDrain => null,
                 :remainingActivityMinutes => 0,
-                :abnormalDrain => _drainLearner.isAbnormalDrain(),
-                :dataPointsPerProfile => _drainLearner.getProfileSampleCounts(),
-                :remainingNativePlanMinutes => remainingNativePlanMinutes,
-                :remainingBroadcastPlanMinutes => remainingBroadcastPlanMinutes,
-                :remainingDaysWithPlan => remainingDaysWithPlan,
                 :solarSuppressed => simplIsPostCharge
             } as ForecastResult;
         }
@@ -629,16 +535,6 @@ module BatteryBudget {
                 }
             } catch (ex) {}
             return DEFAULT_RATE_ACTIVITY;
-        }
-
-        private function getSafeBroadcastRate() as Float {
-            try {
-                var rate = _drainLearner.getBroadcastRate();
-                if (rate >= MIN_RATE && rate <= MAX_RATE) {
-                    return rate;
-                }
-            } catch (ex) {}
-            return DEFAULT_RATE_BROADCAST;
         }
 
         private function getSafeProfileRate(profile as Profile, fallback as Float) as Float {

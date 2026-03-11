@@ -59,16 +59,11 @@
     <!-- Runtime UI strings (foreground widget) -->
     <string id="Tonight">Tonight</string>
     <string id="Now">Now</string>
-    <string id="NowShort">Now</string>
-    <string id="EodShort">EOD</string>
     <string id="Range">Range</string>
     <string id="Risk">Risk</string>
     <string id="Confidence">Confidence</string>
     <string id="Learning">Learning...</string>
     <string id="LearningTitle">LEARNING</string>
-    <string id="MsgWaitForData">Waiting for data</string>
-    <string id="DaysShort">d</string>
-    <string id="DaysLong">days</string>
     <string id="IdleOnlyEstimate">(idle-only estimate)</string>
     <string id="NoData">No data yet</string>
     <string id="DaysCollected">days collected</string>
@@ -79,18 +74,12 @@
     <string id="PlanDoneShort">Done</string>
     <string id="BasedOnPattern">Based on your weekly pattern</string>
     <string id="BasedOnPatternShort">Based on pattern</string>
-    <string id="MsgHighDrain">! High background drain</string>
     <string id="LabelBudget">Budget</string>
     <string id="NativeLabel">Native</string>
-    <string id="OfShort">of</string>
     <string id="UnitHourShort">h</string>
     <string id="UnitMinuteShort">m</string>
     <string id="BroadcastConfirmPrompt">High drain without activity. HR Broadcast / Zwift?</string>
     <string id="WeekPlanTitle">Week Plan</string>
-    <string id="NativePlanLeft">Native left</string>
-    <string id="BroadcastPlanLeft">Broadcast left</string>
-    <string id="DaysWithPlan">Days w/ plan</string>
-    <string id="WeekPlanAutoSync">Auto-updates from detected sessions</string>
 
     <!-- Risk levels -->
     <string id="RiskLow">LOW</string>
