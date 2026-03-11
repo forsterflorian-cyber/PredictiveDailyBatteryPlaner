@@ -15,7 +15,7 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
     function onLayout(dc as Dc) as Void {
         var font = Graphics.FONT_TINY;
         _batteryText = new WatchUi.Text({
-            :text => getBatteryLabel(),
+            :text => getGlanceLabel(),
             :color => Graphics.COLOR_WHITE,
             :font => font,
             :locX => WatchUi.LAYOUT_HALIGN_CENTER,
@@ -29,19 +29,38 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
     }
 
     function onShow() as Void {
-        refreshBatteryLabel();
+        refreshGlanceLabel();
     }
 
     function onUpdate(dc as Dc) as Void {
-        refreshBatteryLabel();
+        refreshGlanceLabel();
         View.onUpdate(dc);
+    }
+
+    private function getGlanceLabel() as String {
+        var forecastLabel = getForecastLabel();
+        if (forecastLabel != null) {
+            return forecastLabel as String;
+        }
+        return getBatteryLabel();
+    }
+
+    private function getForecastLabel() as String? {
+        try {
+            var forecast = BatteryBudget.Forecaster.getSharedInstance().getDisplayForecast();
+            if (forecast != null && forecast[:typical] instanceof Number) {
+                return "EOD " + formatPercentLabel(forecast[:typical] as Number);
+            }
+        } catch (ex) {
+        }
+        return null;
     }
 
     private function getBatteryLabel() as String {
         try {
             var stats = System.getSystemStats();
             if (stats has :battery && stats.battery != null) {
-                return stats.battery.toNumber().toString() + "%";
+                return formatPercentLabel(stats.battery.toNumber());
             }
         } catch (ex) {
         }
@@ -49,12 +68,19 @@ class BatteryBudgetGlanceView extends WatchUi.GlanceView {
         return "--%";
     }
 
-    private function refreshBatteryLabel() as Void {
+    private function refreshGlanceLabel() as Void {
         try {
             if (_batteryText != null) {
-                (_batteryText as WatchUi.Text).setText(getBatteryLabel());
+                (_batteryText as WatchUi.Text).setText(getGlanceLabel());
             }
         } catch (ex) {
         }
+    }
+
+    private function formatPercentLabel(value as Number) as String {
+        var percent = value;
+        if (percent < 0) { percent = 0; }
+        if (percent > 100) { percent = 100; }
+        return percent.toNumber().toString() + "%";
     }
 }
